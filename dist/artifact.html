@@ -3006,14 +3006,28 @@ textarea.dump {
 
   /* ---------- inspector -------------------------------------------------- */
 
+  /* Open the inspector on a window worth looking at: away from the border,
+   * moving well, and with the strongest correlation among those. Picking the
+   * single fastest vector tends to land on the oddest one in the field. */
   function autoPick() {
     if (!S.res) return;
-    var best = -1, bv = -1;
-    for (var k = 0; k < S.res.nx * S.res.ny; k++) {
-      if (S.res.status[k] !== 0) continue;
-      var m = Math.hypot(S.res.u[k], S.res.v[k]);
-      if (m > bv) { bv = m; best = k; }
+    var res = S.res, n = res.nx * res.ny, k, speeds = [];
+    for (k = 0; k < n; k++) {
+      if (res.status[k] === 0) speeds.push(Math.hypot(res.u[k], res.v[k]));
     }
+    if (!speeds.length) return;
+    speeds.sort(function (a, b) { return a - b; });
+    var floor = speeds[Math.floor(speeds.length * 0.6)];
+    var best = -1, bc = -1, fallback = -1, fc = -1;
+    for (k = 0; k < n; k++) {
+      if (res.status[k] !== 0) continue;
+      var i = k % res.nx, j = (k - i) / res.nx;
+      if (res.corr[k] > fc) { fc = res.corr[k]; fallback = k; }
+      if (i === 0 || j === 0 || i === res.nx - 1 || j === res.ny - 1) continue;
+      if (Math.hypot(res.u[k], res.v[k]) < floor) continue;
+      if (res.corr[k] > bc) { bc = res.corr[k]; best = k; }
+    }
+    if (best < 0) best = fallback;
     if (best >= 0) inspect(best);
   }
 
