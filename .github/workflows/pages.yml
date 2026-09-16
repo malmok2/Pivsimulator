@@ -1,0 +1,52 @@
+# 엔진 검증을 통과하면 저장소 루트를 그대로 GitHub Pages 로 올린다.
+# index.html 이 루트에 있고 css/ js/ 를 상대경로로 읽으므로 빌드 단계가 없다.
+name: Test and publish
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 엔진 정확도 검증
+        run: node tests/engine.test.js
+      - name: dist 가 원본과 일치하는지 확인
+        run: |
+          node tools/build.js
+          git diff --exit-code -- dist \
+            || { echo "dist/ 가 원본보다 오래되었습니다. node tools/build.js 를 돌리고 함께 커밋하세요."; exit 1; }
+
+  deploy:
+    needs: test
+    # 기본 브랜치에서만 공개한다. 브랜치 이름이 바뀌어도 그대로 동작한다.
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+        with:
+          # 저장소 설정에서 Pages 를 켜두지 않았어도 여기서 켜진다.
+          enablement: true
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+      - id: deployment
+        uses: actions/deploy-pages@v4
