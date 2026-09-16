@@ -16,9 +16,11 @@ PIV를 한 번도 접하지 않은 사람도 예제 영상으로 "두 장의 사
 
 공개 주소: **https://malmok2.github.io/Pivsimulator/**
 
-> GitHub Pages를 아직 켜지 않았다면 저장소 **Settings → Pages → Source: Deploy from a branch
-> → Branch: `claude/kind-rubin-wvn2y4` / `(root)`** 로 한 번만 설정하면 위 주소가 열립니다.
-> 저장소 루트에 `index.html`이 있으므로 별도 빌드 단계는 없습니다.
+> 처음 한 번만 저장소 **Settings → Pages → Source** 를 **GitHub Actions** 로 바꿔 주세요.
+> 그러면 `.github/workflows/pages.yml` 이 푸시마다 엔진 검증을 돌리고, 통과하면
+> 저장소 루트를 그대로 공개합니다(루트에 `index.html` 이 있어 빌드 단계가 없습니다).
+> Pages 사이트를 만드는 권한은 워크플로 토큰에 없어서 이 한 번은 사람이 켜야 합니다.
+> 켜기 전까지 워크플로는 실패하지 않고 안내만 남깁니다.
 
 내려받아 실행하려면:
 
