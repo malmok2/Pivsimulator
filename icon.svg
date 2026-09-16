@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="PIV Simulator">
+  <title>PIV Simulator</title>
+  <!-- 영상 테두리 -->
+  <rect x="18" y="18" width="92" height="92" rx="3" fill="none"
+        stroke="#1b2a41" stroke-width="3"/>
+  <!-- 조사창 하나 — 이 안의 입자들이 함께 움직인 양이 벡터 하나가 된다 -->
+  <rect x="26" y="34" width="44" height="44" fill="none"
+        stroke="#1b2a41" stroke-width="2" stroke-opacity="0.35" stroke-dasharray="5 4"/>
+  <!-- 시각 t 의 입자 -->
+  <g fill="#1b2a41">
+    <circle cx="36" cy="52" r="4.5"/>
+    <circle cx="60" cy="68" r="4.5"/>
+    <circle cx="80" cy="46" r="4.5"/>
+    <circle cx="48" cy="92" r="4.5"/>
+    <circle cx="78" cy="88" r="4.5"/>
+  </g>
+  <!-- 같은 입자들이 Δt 뒤에 간 곳 — 방향과 길이가 곧 속도 -->
+  <g fill="none" stroke="#00a35c" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M36 52 54 41M54 41 47.8 41.6M54 41 51.1 46.3"/>
+    <path d="M60 68 78 57M78 57 71.8 57.6M78 57 75.1 62.3"/>
+    <path d="M80 46 98 35M98 35 91.8 35.6M98 35 95.1 40.3"/>
+    <path d="M48 92 66 81M66 81 59.8 81.6M66 81 63.1 86.3"/>
+    <path d="M78 88 96 77M96 77 89.8 77.6M96 77 93.1 82.3"/>
+  </g>
+</svg>

@@ -14,6 +14,14 @@ PIV를 한 번도 접하지 않은 사람도 예제 영상으로 "두 장의 사
 
 ## 바로 실행
 
+공개 주소: **https://malmok2.github.io/Pivsimulator/**
+
+> GitHub Pages를 아직 켜지 않았다면 저장소 **Settings → Pages → Source: Deploy from a branch
+> → Branch: `claude/kind-rubin-wvn2y4` / `(root)`** 로 한 번만 설정하면 위 주소가 열립니다.
+> 저장소 루트에 `index.html`이 있으므로 별도 빌드 단계는 없습니다.
+
+내려받아 실행하려면:
+
 ```
 git clone https://github.com/malmok2/Pivsimulator.git
 cd Pivsimulator
@@ -110,6 +118,7 @@ node tests/engine.test.js   # 엔진 정확도 검증
 
 ```
 index.html          문서 구조 (문구는 전부 data-i18n 키)
+icon.svg            도구 아이콘 (THINKLAB 홈페이지 도구 목록이 이 주소를 읽습니다)
 css/piv.css         색 토큰 · 레이아웃 (라이트/다크)
 js/fft.js           radix-2 FFT, 정규화 상호상관
 js/flow.js          해석적 유동장 10종, RK4 변위
