@@ -228,6 +228,20 @@
     return out;
   }
 
+  /* 패스마다 쓸 창 크기. 화면의 힌트와 엔진이 어긋나지 않도록 여기서만 정한다.
+   * 첫 패스 창이 영상의 1/4 보다 넓으면 벡터가 너무 적어 중앙값 검정이 힘을
+   * 못 쓰므로 거기서 자르고, 잘려서 같아진 패스는 접는다. */
+  function schedule(W, H, win, passes) {
+    var cap = Math.pow(2, Math.floor(Math.log(Math.min(W, H) / 4) / Math.LN2));
+    var maxWin = Math.max(win, Math.min(cap, win * Math.pow(2, passes - 1)));
+    var out = [];
+    for (var q = 0; q < passes; q++) {
+      var wq = Math.min(win * Math.pow(2, passes - 1 - q), maxWin);
+      if (out[out.length - 1] !== wq) out.push(wq);
+    }
+    return out;
+  }
+
   /* ---- main ------------------------------------------------------------- */
   /* cfg: imgA, imgB, width, height, win, overlap, passes, subpixel,
    *      threshold, replace, masked(x,y), snrMin */
@@ -240,15 +254,7 @@
     var u = null, v = null;
     var passInfo = [];
 
-    /* The first pass must still resolve the flow: a window wider than a quarter
-     * of the image gives too few vectors for the median test to police. */
-    var capWin = Math.pow(2, Math.floor(Math.log(Math.min(W, H) / 4) / Math.LN2));
-    var maxWin = Math.max(cfg.win, Math.min(capWin, cfg.win * Math.pow(2, nPasses - 1)));
-    var sched = [];
-    for (var q = 0; q < nPasses; q++) {
-      var wq = Math.min(cfg.win * Math.pow(2, nPasses - 1 - q), maxWin);
-      if (sched[sched.length - 1] !== wq) sched.push(wq);   /* capping can repeat */
-    }
+    var sched = schedule(W, H, cfg.win, nPasses);
     nPasses = sched.length;
 
     for (var p = 0; p < nPasses; p++) {
@@ -411,7 +417,7 @@
   }
 
   root.PIVSim.PIV = {
-    run: run, inspect: inspect, derive: derive, truth: truth,
+    run: run, inspect: inspect, derive: derive, truth: truth, schedule: schedule,
     extract: extract, peakFit: peakFit, makeGrid: makeGrid, subpixel: subpixel
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

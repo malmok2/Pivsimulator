@@ -1,828 +1,616 @@
 <title>PIV Simulator</title>
 <meta name="description" content="입자영상유속계(PIV)의 상호상관 계산을 브라우저에서 직접 실행해 보는 시뮬레이터. 합성 입자영상의 참값과 비교해 부화소 정밀도를 확인할 수 있습니다.">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap">
 <style>
-/* PIV Simulator — one stylesheet, token-driven, light and dark.
- * Palette: laser green (532 nm) for anything measured, burnt orange for the
- * exact answer and the correlation peak, cool teal-biased neutrals for paper.
+/* PIV Simulator — THINK Lab 해석도구 공통 디자인 언어.
+ * 토큰과 규칙은 「디자인 지침 — THINK Lab 해석도구 공통」에서 그대로 가져왔다.
+ * 흰 바닥 단일 테마 · 테두리선 대신 그림자 · 강조색은 navy 하나.
  */
 
-:root {
-  --bg: #E9EEEE;
-  --surface: #FCFDFD;
-  --sunken: #F0F5F4;
-  --ink: #0E1A1C;
-  --ink-2: #3C4F53;
-  --muted: #74888C;
-  --line: #CFDBDA;
-  --line-2: #B6C7C5;
-  --laser: #0F7A57;
-  --laser-ink: #0A5B41;
-  --laser-soft: #D9EEE5;
-  --signal: #B4480F;
-  --signal-soft: #FAE4D4;
-  --ok: #1E7D5E;
-  --warn: #A5631A;
-  --bad: #AE3827;
-  --sensor: #060D0C;
-  --sensor-line: #24403A;
-  --shadow: 0 1px 2px rgba(14, 26, 28, .06), 0 8px 24px -16px rgba(14, 26, 28, .35);
-  --theme-name: "light";
-  color-scheme: light;
+:root{
+  /* 바탕과 면 */
+  --bg:#ffffff;
+  --glass:rgba(249,250,251,.82);
+  --glass2:rgba(234,237,241,.92);
+  --glass3:rgba(222,227,233,.96);
+  --sunk:rgba(116,127,142,.15);
+  --hl:rgba(255,255,255,.92);
+  --line:rgba(88,99,114,.16);
+
+  /* 글자 */
+  --text:#15181c;
+  --muted:#22262b;
+
+  /* 강조 — 하나만 */
+  --accent:#0f4c81;
+  --accent-press:#0b3a63;
+  --accent-fg:#ffffff;
+  --accent-soft:rgba(15,76,129,.11);
+  --focus:rgba(15,76,129,.30);
+
+  /* 상태 — 셋만 */
+  --ok:#1d7048; --caution:#7d580f; --bad:#a83f2b;
+
+  /* 차트 계열색 */
+  --c1:#0f4c81; --c2:#a8761f; --c3:#3f7d68;
+  --c4:#8c3f6d; --c5:#5a4b9c; --c6:#a83f2b;
+  --band:rgba(88,99,114,.13);
+
+  /* 그림자 — 층은 셋뿐 */
+  --sh-1:0 1px 2px rgba(24,31,42,.12);
+  --sh-2:0 2px 6px rgba(24,31,42,.10), 0 10px 26px rgba(24,31,42,.12);
+  --sh-3:0 8px 20px rgba(24,31,42,.16), 0 28px 64px rgba(24,31,42,.20);
+
+  --blur:blur(20px) saturate(120%);
+  --font:"Pretendard Variable",Pretendard,"Noto Sans KR","Malgun Gothic",Arial,sans-serif;
+  --mono:"Pretendard Variable",Pretendard,"Noto Sans KR","Malgun Gothic",Arial,sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #0B1315;
-    --surface: #121D20;
-    --sunken: #0E1719;
-    --ink: #E7F0EF;
-    --ink-2: #AABEBE;
-    --muted: #73908F;
-    --line: #213236;
-    --line-2: #304649;
-    --laser: #46DFA0;
-    --laser-ink: #8CEFC4;
-    --laser-soft: #10352A;
-    --signal: #FF9A55;
-    --signal-soft: #3A2212;
-    --ok: #5BD39B;
-    --warn: #E4A94E;
-    --bad: #F0705C;
-    --sensor: #050A0A;
-    --sensor-line: #223C37;
-    --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 10px 30px -18px rgba(0, 0, 0, .9);
-    --theme-name: "dark";
-    color-scheme: dark;
-  }
+*{box-sizing:border-box}
+[hidden]{display:none !important}
+html,body{height:100%}
+body{margin:0; color:var(--text); font-family:var(--font);
+  font-size:14px; line-height:1.45; -webkit-font-smoothing:antialiased;
+  background:var(--bg); overflow:hidden}
+
+h1,h2,h3{margin:0}
+p{margin:0}
+.num,.tabular{font-variant-numeric:tabular-nums}
+
+/* ── 뼈대 ─────────────────────────────────────────────────────── */
+
+.app{display:flex; flex-direction:column; height:100dvh; min-height:0}
+
+header{display:flex; align-items:center; gap:11px; padding:11px 18px;
+  background:var(--glass); backdrop-filter:var(--blur);
+  box-shadow:var(--sh-1), inset 0 -1px 0 var(--line); z-index:5}
+header h1{font-size:17px; font-weight:640; letter-spacing:-.012em; white-space:nowrap}
+header .tag{font-size:10.5px; font-weight:600; color:var(--accent);
+  letter-spacing:.05em; text-transform:uppercase;
+  background:var(--accent-soft); border-radius:7px; padding:3px 9px; white-space:nowrap}
+header .spring{flex:1 1 auto; min-width:8px}
+.headhint{font-size:12px; color:var(--muted); text-align:right;
+  max-width:46ch; line-height:1.4}
+
+.main{display:flex; flex:1; min-height:0}
+aside{width:352px; flex:none; overflow-y:auto; overscroll-behavior:contain;
+  padding:12px 13px 26px; background:var(--bg)}
+.viewport{flex:1; position:relative; min-width:0; overflow:hidden;
+  background:var(--glass2); box-shadow:inset 1px 0 0 var(--line)}
+
+/* ── 컨트롤 그룹 ──────────────────────────────────────────────── */
+
+.grp{margin-bottom:9px; border-radius:12px; background:var(--glass);
+  box-shadow:var(--sh-1), inset 0 1px 0 var(--hl)}
+.grp[open]{box-shadow:var(--sh-2), inset 0 1px 0 var(--hl)}
+.grp > summary{display:flex; align-items:center; gap:8px; cursor:pointer;
+  padding:10px 12px; list-style:none; border-radius:12px}
+.grp > summary::-webkit-details-marker{display:none}
+.grp > summary:hover{background:var(--glass2)}
+.grp > summary:focus-visible{outline:none; box-shadow:0 0 0 3px var(--focus)}
+.grp h2{font-size:11px; font-weight:640; letter-spacing:.06em;
+  text-transform:uppercase; color:var(--muted); white-space:nowrap}
+.gstate{flex:1; font-size:11.5px; color:var(--muted); opacity:.78;
+  text-align:right; font-variant-numeric:tabular-nums;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.grp[open] .gstate{display:none}
+.gchev{flex:none; width:7px; height:7px; margin-left:2px;
+  border-right:1.6px solid var(--muted); border-bottom:1.6px solid var(--muted);
+  transform:rotate(45deg) translate(-2px,-2px); opacity:.55; transition:transform .15s}
+.grp[open] .gchev{transform:rotate(-135deg) translate(-2px,-2px)}
+.grp .body{padding:2px 12px 12px}
+
+.sub{margin-top:8px; border-radius:10px; background:var(--glass2)}
+.sub > summary{display:flex; align-items:center; gap:7px; cursor:pointer;
+  padding:7px 10px; list-style:none; font-size:11.5px; color:var(--muted)}
+.sub > summary::-webkit-details-marker{display:none}
+.sub .body{padding:0 10px 10px}
+
+/* ── 컨트롤 세 짝 ─────────────────────────────────────────────── */
+
+.ctrl{margin:11px 0 0}
+.ctrl:first-child{margin-top:4px}
+.ctrl .row{display:flex; align-items:center; justify-content:space-between; gap:8px}
+.ctrl label{font-size:13px; color:var(--text)}
+.val{display:inline-flex; align-items:baseline; gap:4px}
+.num-in{width:66px; text-align:right; font-family:var(--mono); font-size:13px;
+  font-variant-numeric:tabular-nums; color:var(--text);
+  background:var(--glass2); border:0; border-radius:7px; padding:3px 6px;
+  box-shadow:inset 0 1px 2px rgba(24,31,42,.07)}
+.num-in:focus{outline:none; box-shadow:0 0 0 3px var(--focus)}
+.unit{font-size:11.5px; color:var(--muted)}
+.hint{display:block; font-size:12px; color:var(--muted); opacity:.85;
+  text-align:right; font-variant-numeric:tabular-nums; min-height:1.2em}
+.hint.warn{color:var(--caution); opacity:1}
+.hint.bad{color:var(--bad); opacity:1}
+
+input[type=range]{-webkit-appearance:none; appearance:none; width:100%;
+  height:18px; margin:2px 0 0; background:transparent; cursor:ew-resize}
+input[type=range]::-webkit-slider-runnable-track{height:4px; border-radius:3px;
+  background:var(--sunk); box-shadow:inset 0 1px 2px rgba(24,31,42,.14)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;
+  width:14px; height:14px; margin-top:-5px; border-radius:50%;
+  background:var(--accent); box-shadow:0 0 0 3px var(--accent-soft), var(--sh-1)}
+input[type=range]::-moz-range-track{height:4px; border-radius:3px; background:var(--sunk)}
+input[type=range]::-moz-range-thumb{width:14px; height:14px; border:0; border-radius:50%;
+  background:var(--accent); box-shadow:0 0 0 3px var(--accent-soft)}
+input[type=range]:focus{outline:none}
+input[type=range]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 3px var(--focus)}
+
+select.pick{width:100%; font:inherit; font-size:13px; color:var(--text);
+  background:var(--glass2); border:0; border-radius:8px; padding:6px 8px; cursor:pointer;
+  box-shadow:inset 0 1px 2px rgba(24,31,42,.07)}
+select.pick:focus{outline:none; box-shadow:0 0 0 3px var(--focus)}
+
+/* 세그먼트 · 체크 · 버튼 */
+
+.seg{display:inline-flex; gap:3px; padding:3px; border-radius:10px;
+  background:var(--sunk); box-shadow:inset 0 1px 2px rgba(24,31,42,.10)}
+.seg button{font:inherit; font-size:12px; font-weight:540; color:var(--muted);
+  background:transparent; border:0; border-radius:7px; padding:4px 11px; cursor:pointer;
+  white-space:nowrap}
+.seg button:hover{color:var(--text)}
+.seg button.on{background:var(--bg); color:var(--accent); font-weight:620;
+  box-shadow:var(--sh-1)}
+.seg button:focus-visible{outline:none; box-shadow:0 0 0 3px var(--focus)}
+.seg.wide{display:flex; width:100%}
+.seg.wide button{flex:1; text-align:center}
+
+.chk{display:flex; align-items:center; gap:8px; padding:5px 2px; cursor:pointer;
+  font-size:13px; color:var(--text)}
+.chk input{position:absolute; width:1px; height:1px; margin:-1px; opacity:0;
+  clip-path:inset(50%); pointer-events:none}
+.chk .box{flex:none; width:16px; height:16px; border-radius:5px;
+  background:var(--glass2); box-shadow:inset 0 1px 2px rgba(24,31,42,.10)}
+.chk input:checked + .box{background:var(--accent); box-shadow:var(--sh-1)}
+.chk input:checked + .box::after{content:""; display:block; width:4px; height:8px;
+  margin:2px auto 0; border-right:2px solid var(--accent-fg);
+  border-bottom:2px solid var(--accent-fg); transform:rotate(42deg)}
+.chk input:focus-visible + .box{box-shadow:0 0 0 3px var(--focus)}
+.chk .swatch{flex:none; width:11px; height:2.5px; border-radius:2px}
+
+.btn{display:block; width:100%; font:inherit; font-size:13px; font-weight:560;
+  color:var(--text); background:var(--glass2); border:0; border-radius:10px;
+  padding:9px 12px; cursor:pointer; box-shadow:var(--sh-1), inset 0 1px 0 var(--hl)}
+.btn:hover{background:var(--glass3)}
+.btn:active{transform:translateY(1px)}
+.btn:focus-visible{outline:none; box-shadow:0 0 0 3px var(--focus)}
+.btn.primary{color:var(--accent-fg); background:var(--accent); box-shadow:var(--sh-2)}
+.btn.primary:hover{background:var(--accent-press)}
+.btn[disabled]{opacity:.55; cursor:progress}
+.btn + .btn{margin-top:7px}
+.btnrow{display:flex; gap:7px; margin-top:9px}
+.btnrow .btn{margin-top:0}
+
+input[type=file]{width:100%; font:inherit; font-size:12px; color:var(--muted);
+  background:var(--glass2); border:0; border-radius:8px; padding:6px}
+input[type=file]:focus{outline:none; box-shadow:0 0 0 3px var(--focus)}
+
+.phys{font-size:11.5px; line-height:1.7; color:var(--muted)}
+.phys b{font-variant-numeric:tabular-nums; color:var(--text); font-weight:620}
+.note{font-size:11.5px; line-height:1.5; color:var(--muted); margin-top:8px}
+.note.ok{color:var(--ok)} .note.caution{color:var(--caution)} .note.bad{color:var(--bad)}
+
+/* ── 뷰포트와 떠 있는 판 ──────────────────────────────────────── */
+
+.stage-wrap{position:absolute; inset:0; display:grid; place-items:center;
+  padding:14px}
+#stage{display:block; max-width:100%; max-height:100%;
+  border-radius:10px; box-shadow:var(--sh-2); background:var(--bg)}
+.stage-wrap.picking{cursor:crosshair}
+
+.panel{position:absolute; border-radius:12px; background:var(--glass);
+  backdrop-filter:var(--blur); box-shadow:var(--sh-2), inset 0 1px 0 var(--hl);
+  padding:10px 12px}
+.panel h3{font-size:10.5px; font-weight:640; letter-spacing:.06em;
+  text-transform:uppercase; color:var(--muted); margin-bottom:6px}
+
+.p-stats{top:12px; left:12px; min-width:196px}
+.p-scope{top:12px; right:12px; width:286px; max-height:calc(100% - 24px); overflow:auto}
+.p-legend{bottom:12px; left:12px; max-width:340px}
+.p-warn{bottom:12px; right:12px; max-width:320px;
+  box-shadow:var(--sh-3), inset 0 1px 0 var(--hl)}
+
+.stats{display:grid; grid-template-columns:auto 1fr; gap:2px 12px; font-size:12px}
+.stats dt{color:var(--muted); opacity:.85}
+.stats dd{margin:0; text-align:right; font-variant-numeric:tabular-nums; font-weight:540}
+.stats dd.hero{font-size:20px; font-weight:660; letter-spacing:-.02em; color:var(--accent);
+  line-height:1.2}
+.stats .heroline{grid-column:1 / -1; display:flex; align-items:baseline;
+  justify-content:space-between; gap:8px; margin-bottom:2px}
+.stats .heroline span{font-size:10.5px; letter-spacing:.06em; text-transform:uppercase;
+  color:var(--muted)}
+.stats .sep{grid-column:1 / -1; height:1px; margin:5px 0 4px; background:var(--line)}
+
+.scope-pair{display:grid; grid-template-columns:1fr 1fr; gap:8px}
+.tile{display:grid; gap:3px}
+.tile .cap{font-size:10px; letter-spacing:.05em; color:var(--muted); opacity:.9}
+.tile canvas{display:block; width:100%; height:auto; border-radius:7px;
+  background:var(--bg); box-shadow:var(--sh-1)}
+.scope-head{display:flex; align-items:center; justify-content:space-between; gap:8px;
+  margin:9px 0 3px}
+.readouts{display:grid; grid-template-columns:auto 1fr; gap:1px 10px; font-size:12px;
+  margin-top:8px}
+.readouts dt{color:var(--muted); opacity:.85}
+.readouts dd{margin:0; text-align:right; font-variant-numeric:tabular-nums}
+.readouts dd.hi{color:var(--accent); font-weight:600}
+.readouts dd.alt{color:var(--c2); font-weight:600}
+.verdict[data-st="0"]{color:var(--ok)}
+.verdict[data-st="1"],.verdict[data-st="3"]{color:var(--caution)}
+.verdict[data-st="2"]{color:var(--muted)}
+.scope-empty{font-size:12px; color:var(--muted); line-height:1.5}
+
+.bar{display:flex; align-items:center; gap:7px; font-size:11.5px; color:var(--muted);
+  font-variant-numeric:tabular-nums}
+.ramp{width:148px; height:9px; border-radius:3px; box-shadow:var(--sh-1)}
+.legend-cap{margin-top:5px; font-size:11.5px; color:var(--muted); line-height:1.45}
+.keys{display:flex; flex-wrap:wrap; gap:4px 12px; margin-top:6px; font-size:11.5px;
+  color:var(--muted)}
+.key{display:inline-flex; align-items:center; gap:5px}
+.key i{width:15px; height:0; border-top:2.5px solid currentColor; display:inline-block}
+.scalebar{display:inline-flex; align-items:center; gap:6px}
+.scalebar i{height:0; border-top:2.5px solid var(--accent); display:inline-block}
+
+.p-warn .wtitle{display:flex; align-items:center; gap:7px; font-size:12px;
+  font-weight:620; color:var(--caution)}
+.p-warn[data-level="bad"] .wtitle{color:var(--bad)}
+.p-warn .wmark{font-size:13px; line-height:1}
+.p-warn .wbody{margin-top:4px; font-size:12px; line-height:1.5; color:var(--text)}
+.p-warn .wfix{margin-top:3px; font-size:12px; line-height:1.5; color:var(--muted)}
+
+.veil{position:absolute; inset:0; display:grid; place-items:center; z-index:3;
+  background:rgba(255,255,255,.72); backdrop-filter:blur(3px);
+  font-size:13px; color:var(--muted)}
+.progress{position:absolute; left:0; bottom:0; height:2px; background:var(--accent);
+  transition:width .08s linear; z-index:4}
+
+.toast{min-height:1.2em; font-size:11.5px; color:var(--accent); margin-top:7px}
+textarea.dump{width:100%; height:110px; margin-top:8px; font-family:var(--mono);
+  font-size:11px; color:var(--text); background:var(--glass2); border:0;
+  border-radius:8px; padding:8px; box-shadow:inset 0 1px 2px rgba(24,31,42,.07)}
+textarea.dump:focus{outline:none; box-shadow:0 0 0 3px var(--focus)}
+
+.sr{position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+  overflow:hidden; clip-path:inset(50%); white-space:nowrap}
+
+/* ── 좁은 화면 ────────────────────────────────────────────────── */
+
+@media (max-width:900px){
+  body{overflow:auto}
+  .app{height:auto; min-height:100dvh}
+  .main{flex-direction:column}
+  aside{width:100%; order:2; overflow:visible}
+  .viewport{order:1; min-height:52vh}
+  header{flex-wrap:wrap; padding:10px 14px}
+  .headhint{max-width:none; text-align:left; flex-basis:100%}
+  .p-scope{position:static; width:auto; max-height:none; margin:0 12px 12px;
+    backdrop-filter:none}
+  .p-stats,.p-legend,.p-warn{position:static; margin:0 12px 10px}
+  .viewport{display:flex; flex-direction:column; padding-bottom:12px}
+  .stage-wrap{position:relative; inset:auto; flex:1; min-height:46vh}
 }
 
-:root[data-theme="dark"] {
-  --bg: #0B1315;
-  --surface: #121D20;
-  --sunken: #0E1719;
-  --ink: #E7F0EF;
-  --ink-2: #AABEBE;
-  --muted: #73908F;
-  --line: #213236;
-  --line-2: #304649;
-  --laser: #46DFA0;
-  --laser-ink: #8CEFC4;
-  --laser-soft: #10352A;
-  --signal: #FF9A55;
-  --signal-soft: #3A2212;
-  --ok: #5BD39B;
-  --warn: #E4A94E;
-  --bad: #F0705C;
-  --sensor: #050A0A;
-  --sensor-line: #223C37;
-  --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 10px 30px -18px rgba(0, 0, 0, .9);
-  --theme-name: "dark";
-  color-scheme: dark;
-}
-
-* { box-sizing: border-box; }
-
-[hidden] { display: none !important; }
-
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--ink);
-  font-family: "IBM Plex Sans KR", "IBM Plex Sans", system-ui, -apple-system, "Malgun Gothic", sans-serif;
-  font-size: 15px;
-  line-height: 1.6;
-  -webkit-text-size-adjust: 100%;
-}
-
-.page {
-  max-width: 1440px;
-  margin: 0 auto;
-  padding-inline: 16px;
-  padding-block: 28px 56px;
-}
-
-h1, h2, h3 { margin: 0; text-wrap: balance; letter-spacing: -.015em; }
-p { margin: 0; }
-
-.eyebrow {
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: .14em;
-  color: var(--laser-ink);
-  text-transform: uppercase;
-}
-
-.mono, .num {
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-variant-numeric: tabular-nums;
-}
-
-/* ---- masthead --------------------------------------------------------- */
-
-.masthead {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  padding-bottom: 22px;
-  border-bottom: 1px solid var(--line);
-}
-.masthead h1 { font-size: clamp(25px, 4.4vw, 40px); font-weight: 700; line-height: 1.14; }
-.masthead .eyebrow, .masthead h1 { grid-column: 1; }
-.masthead .lede {
-  grid-column: 1 / -1;
-  max-width: 64ch;
-  color: var(--ink-2);
-  font-size: 15px;
-}
-.masthead-tools { grid-column: 2; grid-row: 1 / span 2; display: flex; gap: 6px; }
-
-button {
-  font: inherit;
-  cursor: pointer;
-  border-radius: 7px;
-  border: 1px solid var(--line-2);
-  background: var(--surface);
-  color: var(--ink);
-  padding: 6px 11px;
-  transition: background .13s, border-color .13s, color .13s;
-}
-button:hover { border-color: var(--laser); color: var(--laser-ink); }
-button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible {
-  outline: 2px solid var(--laser);
-  outline-offset: 2px;
-}
-.ghost { background: transparent; font-size: 13px; padding: 5px 10px; }
-
-/* ---- the four steps --------------------------------------------------- */
-
-.steps {
-  list-style: none;
-  display: grid;
-  gap: 10px;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  margin: 22px 0 0;
-  padding: 0;
-  counter-reset: none;
-}
-.steps > li { display: flex; }
-.step {
-  flex: 1;
-  text-align: left;
-  display: grid;
-  gap: 3px;
-  align-content: start;
-  padding: 11px 13px 13px;
-  border: 1px solid var(--line);
-  border-top: 2px solid var(--line-2);
-  border-radius: 0 0 8px 8px;
-  background: var(--surface);
-}
-.step:hover { border-top-color: var(--laser); color: inherit; }
-.step[aria-current="true"] {
-  border-top-color: var(--laser);
-  background: var(--laser-soft);
-}
-.step-n {
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 10.5px;
-  letter-spacing: .1em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.step[aria-current="true"] .step-n { color: var(--laser-ink); }
-.step h3 { font-size: 15px; font-weight: 600; }
-.step p { font-size: 12.5px; line-height: 1.45; color: var(--ink-2); }
-
-/* ---- bench layout ----------------------------------------------------- */
-
-.bench {
-  display: grid;
-  gap: 16px;
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: "stage" "controls" "inspector";
-  margin-top: 18px;
-}
-@media (min-width: 900px) {
-  .bench {
-    grid-template-columns: 252px minmax(0, 1fr);
-    grid-template-areas: "controls stage" "controls inspector";
-    align-items: start;
-  }
-}
-@media (min-width: 1300px) {
-  .bench {
-    grid-template-columns: 258px minmax(0, 1fr) 330px;
-    grid-template-areas: "controls stage inspector";
-  }
-}
-.controls { grid-area: controls; }
-.stage-col { grid-area: stage; min-width: 0; }
-.inspector { grid-area: inspector; }
-
-.panel {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  box-shadow: var(--shadow);
-}
-
-/* ---- control groups --------------------------------------------------- */
-
-.group { padding: 12px 14px; border-bottom: 1px solid var(--line); }
-.group:last-child { border-bottom: 0; }
-.group > h3 {
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 10.5px;
-  letter-spacing: .13em;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin-bottom: 9px;
-}
-.field { display: grid; gap: 4px; margin-bottom: 11px; }
-.field:last-child { margin-bottom: 0; }
-.field > .row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-}
-.field label { font-size: 12.5px; color: var(--ink-2); }
-.field .val {
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-variant-numeric: tabular-nums;
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--ink);
-}
-.hint { font-size: 11.5px; line-height: 1.4; color: var(--muted); }
-
-select, input[type="file"] {
-  width: 100%;
-  font: inherit;
-  font-size: 13px;
-  color: var(--ink);
-  background: var(--sunken);
-  border: 1px solid var(--line-2);
-  border-radius: 7px;
-  padding: 6px 8px;
-}
-select { cursor: pointer; }
-
-input[type="range"] {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 100%;
-  height: 20px;
-  background: transparent;
-  margin: 0;
-  cursor: ew-resize;
-}
-input[type="range"]::-webkit-slider-runnable-track {
-  height: 3px;
-  border-radius: 2px;
-  background: var(--line-2);
-}
-input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 14px; height: 14px;
-  margin-top: -5.5px;
-  border-radius: 50%;
-  background: var(--laser);
-  border: 2px solid var(--surface);
-  box-shadow: 0 0 0 1px var(--laser);
-}
-input[type="range"]::-moz-range-track { height: 3px; border-radius: 2px; background: var(--line-2); }
-input[type="range"]::-moz-range-thumb {
-  width: 12px; height: 12px; border-radius: 50%;
-  background: var(--laser); border: 2px solid var(--surface);
-}
-
-/* segmented + chip toggles */
-.seg { display: flex; flex-wrap: wrap; gap: 4px; }
-.seg input {
-  position: absolute;
-  width: 1px; height: 1px;
-  margin: -1px;
-  opacity: 0;
-  clip-path: inset(50%);
-  pointer-events: none;
-}
-.seg label, .chip {
-  font-size: 12px;
-  padding: 4px 9px;
-  border: 1px solid var(--line-2);
-  border-radius: 6px;
-  background: var(--sunken);
-  color: var(--ink-2);
-  cursor: pointer;
-  user-select: none;
-}
-.seg label:hover, .chip:hover { border-color: var(--laser); }
-.seg input:checked + label, .chip[aria-pressed="true"] {
-  background: var(--laser-soft);
-  border-color: var(--laser);
-  color: var(--laser-ink);
-  font-weight: 500;
-}
-.seg input:focus-visible + label { outline: 2px solid var(--laser); outline-offset: 2px; }
-.swatch {
-  display: inline-block;
-  width: 9px; height: 9px;
-  margin-right: 5px;
-  border-radius: 2px;
-  vertical-align: baseline;
-}
-
-/* ---- stage ------------------------------------------------------------- */
-
-.stage-col { display: grid; gap: 10px; }
-.stage-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-.run {
-  background: var(--laser);
-  border-color: var(--laser);
-  color: #04120D;
-  font-weight: 600;
-  padding: 8px 16px;
-  font-size: 14px;
-}
-.run:hover { filter: brightness(1.07); color: #04120D; border-color: var(--laser); }
-.run[disabled] { opacity: .55; cursor: progress; }
-.stage-bar .spacer { flex: 1 1 auto; }
-.stage-bar select { width: auto; min-width: 150px; }
-
-.sensor {
-  position: relative;
-  border-radius: 10px;
-  overflow: hidden;
-  background: var(--sensor);
-  border: 1px solid var(--sensor-line);
-  box-shadow: var(--shadow);
-}
-.sensor canvas { display: block; width: 100%; height: auto; }
-.sensor.picking { cursor: crosshair; }
-.stage-veil {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  text-align: center;
-  color: #CFE3DC;
-  font-size: 13px;
-  background: rgba(6, 13, 12, .72);
-  backdrop-filter: blur(2px);
-}
-.progress {
-  position: absolute;
-  left: 0; bottom: 0;
-  height: 2px;
-  background: var(--laser);
-  transition: width .08s linear;
-}
-.stage-foot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 16px;
-  font-size: 11.5px;
-  color: var(--muted);
-}
-.bar {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-.bar .ramp {
-  width: 128px; height: 9px;
-  border-radius: 2px;
-  border: 1px solid var(--line-2);
-}
-/* colours taken from arrows drawn on the sensor frame: show them framed the
-   way they appear there, or the pale end vanishes on a light page */
-.bar.on-sensor .ramp {
-  border-color: var(--sensor-line);
-  box-shadow: 0 0 0 3px var(--sensor);
-  margin-inline: 3px;
-}
-.key { display: inline-flex; align-items: center; gap: 5px; }
-.key i {
-  width: 16px; height: 0;
-  border-top: 2px solid currentColor;
-  display: inline-block;
-}
-
-/* ---- inspector -------------------------------------------------------- */
-
-.inspector { display: grid; }
-.insp-head { padding: 12px 14px 0; }
-.insp-head h2 { font-size: 15px; font-weight: 600; }
-.insp-head p { font-size: 11.5px; color: var(--muted); }
-.insp-body { padding: 12px 14px 14px; display: grid; gap: 12px; }
-.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.tile { display: grid; gap: 4px; }
-.tile .cap {
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 10px;
-  letter-spacing: .07em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.tile canvas {
-  display: block;
-  width: 100%;
-  height: auto;
-  border-radius: 6px;
-  background: var(--sensor);
-  border: 1px solid var(--sensor-line);
-}
-.corr-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.readouts {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 3px 10px;
-  font-size: 12.5px;
-}
-.readouts dt { color: var(--muted); }
-.readouts dd {
-  margin: 0;
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-.readouts dd.hi { color: var(--laser-ink); font-weight: 500; }
-.readouts dd.sig { color: var(--signal); }
-.verdict { font-weight: 500; }
-.verdict[data-st="0"] { color: var(--ok); }
-.verdict[data-st="1"], .verdict[data-st="3"] { color: var(--warn); }
-.verdict[data-st="2"] { color: var(--muted); }
-
-/* ---- readout strip ---------------------------------------------------- */
-
-.readout {
-  margin-top: 18px;
-  display: grid;
-  gap: 16px;
-  grid-template-columns: minmax(0, 1fr);
-}
-@media (min-width: 820px) {
-  .readout { grid-template-columns: minmax(230px, 300px) minmax(0, 1fr); }
-}
-.hero { padding: 16px 18px; display: grid; gap: 2px; align-content: start; }
-.hero .cap {
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 10.5px;
-  letter-spacing: .12em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.hero .big {
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-variant-numeric: tabular-nums;
-  font-size: clamp(38px, 7vw, 54px);
-  font-weight: 500;
-  line-height: 1.05;
-  letter-spacing: -.03em;
-  color: var(--laser-ink);
-}
-.hero .big small { font-size: .38em; font-weight: 400; color: var(--muted); letter-spacing: 0; }
-.hero .sub { font-size: 12px; color: var(--ink-2); }
-.hero .fraction {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px dashed var(--line-2);
-  font-size: 12.5px;
-  color: var(--ink-2);
-}
-.hero .fraction b { font-family: "IBM Plex Mono", ui-monospace, monospace; color: var(--ink); }
-
-.facts { padding: 14px 16px; display: grid; gap: 14px; }
-@media (min-width: 620px) { .facts { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); } }
-.facts h3 {
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 10.5px;
-  letter-spacing: .12em;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin-bottom: 7px;
-}
-table.stats { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-table.stats th, table.stats td { text-align: left; padding: 3.5px 0; border-bottom: 1px solid var(--line); }
-table.stats th { font-weight: 400; color: var(--muted); }
-table.stats td {
-  text-align: right;
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-variant-numeric: tabular-nums;
-}
-table.stats tr:last-child th, table.stats tr:last-child td { border-bottom: 0; }
-
-.diags { display: grid; gap: 5px; }
-.diag {
-  display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) auto;
-  gap: 7px;
-  align-items: baseline;
-  font-size: 12.5px;
-  padding: 4px 6px;
-  border-radius: 6px;
-  background: var(--sunken);
-}
-.diag .mark { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12px; text-align: center; }
-.diag[data-level="ok"] .mark { color: var(--ok); }
-.diag[data-level="warn"] .mark { color: var(--warn); }
-.diag[data-level="bad"] .mark { color: var(--bad); }
-.diag .what { color: var(--ink-2); }
-.diag .what em { font-style: normal; color: var(--muted); font-size: 11.5px; display: block; }
-.diag .num { font-size: 12px; }
-
-/* ---- footer sections -------------------------------------------------- */
-
-.tail { margin-top: 18px; display: grid; gap: 16px; }
-@media (min-width: 900px) { .tail { grid-template-columns: minmax(0, 320px) minmax(0, 1fr); } }
-.card { padding: 14px 16px; }
-.card h2 { font-size: 14px; font-weight: 600; margin-bottom: 7px; }
-.card p, .card li { font-size: 12.5px; line-height: 1.6; color: var(--ink-2); }
-.card p + p { margin-top: 7px; }
-.card .fineprint { margin-top: 9px; font-size: 11.5px; color: var(--muted); }
-.upload-row { display: grid; gap: 8px; margin: 8px 0; }
-.upload-row .field { margin: 0; }
-.actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.toast {
-  font-size: 12px;
-  color: var(--laser-ink);
-  min-height: 1.2em;
-}
-textarea.dump {
-  width: 100%;
-  height: 120px;
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 11px;
-  background: var(--sunken);
-  color: var(--ink);
-  border: 1px solid var(--line-2);
-  border-radius: 7px;
-  padding: 8px;
-  margin-top: 8px;
-}
-
-.sr {
-  position: absolute; width: 1px; height: 1px;
-  padding: 0; margin: -1px; overflow: hidden;
-  clip: rect(0 0 0 0); white-space: nowrap; border: 0;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  * { transition-duration: 0s !important; animation-duration: 0s !important; }
+@media (prefers-reduced-motion:reduce){
+  *{transition-duration:0s !important; animation-duration:0s !important}
 }
 
 </style>
-<div class="page">
+<div class="app">
 
-  <header class="masthead">
-    <p class="eyebrow" data-i18n="app.eyebrow"></p>
+  <header>
     <h1 data-i18n="app.title"></h1>
-    <p class="lede" data-i18n="app.lede"></p>
-    <div class="masthead-tools">
-      <button type="button" id="langBtn" class="ghost" data-i18n="app.langLabel"></button>
-      <button type="button" id="themeBtn" class="ghost" data-i18n-aria="app.themeLabel" aria-label="theme">◑</button>
+    <span class="tag" data-i18n="app.tag"></span>
+    <div class="seg" id="stepSeg">
+      <button type="button" data-step="1" data-i18n="step.1.t"></button>
+      <button type="button" data-step="2" data-i18n="step.2.t"></button>
+      <button type="button" data-step="3" data-i18n="step.3.t"></button>
+      <button type="button" data-step="4" data-i18n="step.4.t"></button>
+    </div>
+    <span class="spring"></span>
+    <p class="headhint" id="headHint"></p>
+    <div class="seg" id="langSeg">
+      <button type="button" data-lang="ko" class="on">KO</button>
+      <button type="button" data-lang="en">EN</button>
     </div>
   </header>
 
-  <ol class="steps" id="steps">
-    <li><button type="button" class="step" data-step="1">
-      <span class="step-n" data-i18n="step.1.n"></span>
-      <h3 data-i18n="step.1.t"></h3>
-      <p data-i18n="step.1.d"></p>
-    </button></li>
-    <li><button type="button" class="step" data-step="2">
-      <span class="step-n" data-i18n="step.2.n"></span>
-      <h3 data-i18n="step.2.t"></h3>
-      <p data-i18n="step.2.d"></p>
-    </button></li>
-    <li><button type="button" class="step" data-step="3">
-      <span class="step-n" data-i18n="step.3.n"></span>
-      <h3 data-i18n="step.3.t"></h3>
-      <p data-i18n="step.3.d"></p>
-    </button></li>
-    <li><button type="button" class="step" data-step="4">
-      <span class="step-n" data-i18n="step.4.n"></span>
-      <h3 data-i18n="step.4.t"></h3>
-      <p data-i18n="step.4.d"></p>
-    </button></li>
-  </ol>
+  <div class="main">
 
-  <div class="bench">
-
-    <!-- ---------- stage ---------- -->
-    <section class="stage-col">
-      <div class="stage-bar">
-        <button type="button" id="runBtn" class="run" data-i18n="run"></button>
-        <button type="button" id="reshootBtn" data-i18n="reshoot" data-i18n-title="reshoot.hint"></button>
-        <span class="spacer"></span>
-        <label class="sr" for="bgSelect" data-i18n="view.bg"></label>
-        <select id="bgSelect">
-          <option value="a" data-i18n="bg.a"></option>
-          <option value="blink" data-i18n="bg.blink"></option>
-          <option value="pair" data-i18n="bg.pair"></option>
-          <option value="speed" data-i18n="bg.speed"></option>
-          <option value="vort" data-i18n="bg.vort"></option>
-          <option value="err" data-i18n="bg.err"></option>
-          <option value="div" data-i18n="bg.div"></option>
-        </select>
+    <!-- ───────── 사이드바 ───────── -->
+    <aside>
+      <button type="button" id="runBtn" class="btn primary" data-i18n="run"></button>
+      <div class="btnrow">
+        <button type="button" id="reshootBtn" class="btn" data-i18n="reshoot"></button>
+        <button type="button" id="copyCsv" class="btn" data-i18n="copy.csv"></button>
       </div>
+      <p class="toast" id="toast"></p>
 
-      <div class="sensor picking" id="sensor">
-        <canvas id="stage" width="768" height="768"></canvas>
-        <div class="stage-veil" id="veil"><span data-i18n="stage.empty"></span></div>
-        <div class="progress" id="progress" style="width:0"></div>
-      </div>
-
-      <div class="stage-foot">
-        <span class="bar" id="rampBar" hidden>
-          <span class="num" id="rampLo">0</span>
-          <span class="ramp" id="ramp"></span>
-          <span class="num" id="rampHi">1</span>
-          <span id="rampLabel"></span>
-        </span>
-        <span class="key" id="keyMeas" hidden><i></i><span data-i18n="legend.measured"></span></span>
-        <span class="key" id="keyTruth" hidden><i></i><span data-i18n="legend.truth"></span></span>
-        <span class="key" id="keyRej"><i></i><span data-i18n="legend.rejected"></span></span>
-        <span class="spacer"></span>
-        <span id="stageHint" data-i18n="stage.hint"></span>
-      </div>
-    </section>
-
-    <!-- ---------- controls ---------- -->
-    <aside class="panel controls">
-      <div class="group">
-        <h3 data-i18n="group.flow"></h3>
-        <div class="field">
-          <label for="flowKind" data-i18n="flow.kind"></label>
-          <select id="flowKind"></select>
-        </div>
-        <div class="field">
-          <div class="row">
-            <label for="dispRange" data-i18n="flow.disp"></label>
-            <span class="val" id="dispVal"></span>
+      <details class="grp" id="gFlow" open>
+        <summary>
+          <h2 data-i18n="group.flow"></h2>
+          <span class="gstate" id="gsFlow"></span><i class="gchev"></i>
+        </summary>
+        <div class="body">
+          <div class="ctrl">
+            <div class="row"><label for="flowKind" data-i18n="flow.kind"></label></div>
+            <select class="pick" id="flowKind"></select>
+            <span class="hint" id="flowHint"></span>
           </div>
-          <input type="range" id="dispRange" min="1" max="16" step="0.5" value="6">
-          <p class="hint" data-i18n="flow.disp.hint"></p>
-        </div>
-      </div>
-
-      <div class="group">
-        <h3 data-i18n="group.record"></h3>
-        <div class="field">
-          <div class="row">
-            <label for="seedRange" data-i18n="rec.seed"></label>
-            <span class="val" id="seedVal"></span>
-          </div>
-          <input type="range" id="seedRange" min="1" max="40" step="1" value="14">
-          <p class="hint" data-i18n="rec.seed.hint"></p>
-        </div>
-        <div class="field">
-          <div class="row">
-            <label for="dpRange" data-i18n="rec.dp"></label>
-            <span class="val" id="dpVal"></span>
-          </div>
-          <input type="range" id="dpRange" min="1" max="5" step="0.1" value="2.6">
-          <p class="hint" data-i18n="rec.dp.hint"></p>
-        </div>
-        <div class="field">
-          <div class="row">
-            <label for="noiseRange" data-i18n="rec.noise"></label>
-            <span class="val" id="noiseVal"></span>
-          </div>
-          <input type="range" id="noiseRange" min="0" max="12" step="0.5" value="1.5">
-        </div>
-        <div class="field">
-          <div class="row">
-            <label for="lossRange" data-i18n="rec.loss"></label>
-            <span class="val" id="lossVal"></span>
-          </div>
-          <input type="range" id="lossRange" min="0" max="60" step="1" value="5">
-          <p class="hint" data-i18n="rec.loss.hint"></p>
-        </div>
-        <div class="field">
-          <label for="sizeSelect" data-i18n="rec.size"></label>
-          <select id="sizeSelect">
-            <option value="256">256 × 256 px</option>
-            <option value="384" selected>384 × 384 px</option>
-            <option value="512">512 × 512 px</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="group">
-        <h3 data-i18n="group.process"></h3>
-        <div class="field">
-          <label for="winSelect" data-i18n="proc.win"></label>
-          <select id="winSelect">
-            <option value="16">16 × 16 px</option>
-            <option value="32" selected>32 × 32 px</option>
-            <option value="64">64 × 64 px</option>
-          </select>
-          <p class="hint" data-i18n="proc.win.hint"></p>
-        </div>
-        <div class="field">
-          <label for="overlapSelect" data-i18n="proc.overlap"></label>
-          <select id="overlapSelect">
-            <option value="0">0 %</option>
-            <option value="0.25">25 %</option>
-            <option value="0.5" selected>50 %</option>
-            <option value="0.75">75 %</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="passesSelect" data-i18n="proc.passes"></label>
-          <select id="passesSelect">
-            <option value="1">1</option>
-            <option value="2">2</option>
-            <option value="3" selected>3</option>
-          </select>
-          <p class="hint" data-i18n="proc.passes.hint"></p>
-        </div>
-        <div class="field">
-          <label for="subpixSelect" data-i18n="proc.subpixel"></label>
-          <select id="subpixSelect">
-            <option value="gauss" data-i18n="sp.gauss"></option>
-            <option value="parabolic" data-i18n="sp.parabolic"></option>
-            <option value="centroid" data-i18n="sp.centroid"></option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="threshSelect" data-i18n="proc.threshold"></label>
-          <select id="threshSelect">
-            <option value="1.5">1.5</option>
-            <option value="2" selected>2.0</option>
-            <option value="3">3.0</option>
-            <option value="1000">off</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="group">
-        <h3 data-i18n="group.view"></h3>
-        <div class="field">
-          <label data-i18n="view.overlay"></label>
-          <div class="seg" id="overlaySeg">
-            <input type="checkbox" id="ovVectors" checked><label for="ovVectors"><span class="swatch" style="background:var(--laser)"></span><span data-i18n="ov.vectors"></span></label>
-            <input type="checkbox" id="ovTruth"><label for="ovTruth"><span class="swatch" style="background:var(--signal)"></span><span data-i18n="ov.truth"></span></label>
-            <input type="checkbox" id="ovError"><label for="ovError"><span data-i18n="ov.error"></span></label>
-            <input type="checkbox" id="ovGrid"><label for="ovGrid"><span data-i18n="ov.grid"></span></label>
+          <div class="ctrl">
+            <div class="row">
+              <label for="dispRange" data-i18n="flow.disp"></label>
+              <span class="val">
+                <input class="num-in" id="dispNum" type="number" min="1" max="16" step="0.5">
+                <em class="unit">px</em>
+              </span>
+            </div>
+            <span class="hint" id="dispHint"></span>
+            <input type="range" id="dispRange" min="1" max="16" step="0.5" value="6">
           </div>
         </div>
-        <div class="field">
-          <div class="row">
-            <label for="scaleRange" data-i18n="view.scale"></label>
-            <span class="val" id="scaleVal"></span>
+      </details>
+
+      <details class="grp" id="gRec" open>
+        <summary>
+          <h2 data-i18n="group.record"></h2>
+          <span class="gstate" id="gsRec"></span><i class="gchev"></i>
+        </summary>
+        <div class="body">
+          <div class="ctrl">
+            <div class="row">
+              <label for="seedRange" data-i18n="rec.seed"></label>
+              <span class="val">
+                <input class="num-in" id="seedNum" type="number" min="1" max="40" step="1">
+                <em class="unit" data-i18n="unit.count"></em>
+              </span>
+            </div>
+            <span class="hint" id="seedHint"></span>
+            <input type="range" id="seedRange" min="1" max="40" step="1" value="14">
           </div>
-          <input type="range" id="scaleRange" min="0.3" max="4" step="0.1" value="1">
+          <div class="ctrl">
+            <div class="row">
+              <label for="dpRange" data-i18n="rec.dp"></label>
+              <span class="val">
+                <input class="num-in" id="dpNum" type="number" min="1" max="5" step="0.1">
+                <em class="unit">px</em>
+              </span>
+            </div>
+            <span class="hint" id="dpHint"></span>
+            <input type="range" id="dpRange" min="1" max="5" step="0.1" value="2.6">
+          </div>
+          <div class="ctrl">
+            <div class="row">
+              <label for="lossRange" data-i18n="rec.loss"></label>
+              <span class="val">
+                <input class="num-in" id="lossNum" type="number" min="0" max="60" step="1">
+                <em class="unit">%</em>
+              </span>
+            </div>
+            <span class="hint" id="lossHint"></span>
+            <input type="range" id="lossRange" min="0" max="60" step="1" value="5">
+          </div>
+          <div class="ctrl">
+            <div class="row">
+              <label for="noiseRange" data-i18n="rec.noise"></label>
+              <span class="val">
+                <input class="num-in" id="noiseNum" type="number" min="0" max="12" step="0.5">
+                <em class="unit">%</em>
+              </span>
+            </div>
+            <span class="hint" id="noiseHint"></span>
+            <input type="range" id="noiseRange" min="0" max="12" step="0.5" value="1.5">
+          </div>
+          <details class="sub">
+            <summary data-i18n="rec.more"></summary>
+            <div class="body">
+              <div class="ctrl">
+                <div class="row"><label for="sizeSelect" data-i18n="rec.size"></label></div>
+                <select class="pick" id="sizeSelect">
+                  <option value="256">256 × 256 px</option>
+                  <option value="384" selected>384 × 384 px</option>
+                  <option value="512">512 × 512 px</option>
+                </select>
+                <span class="hint" id="sizeHint"></span>
+              </div>
+            </div>
+          </details>
         </div>
-      </div>
+      </details>
+
+      <details class="grp" id="gProc" open>
+        <summary>
+          <h2 data-i18n="group.process"></h2>
+          <span class="gstate" id="gsProc"></span><i class="gchev"></i>
+        </summary>
+        <div class="body">
+          <div class="ctrl">
+            <div class="row"><label for="winSelect" data-i18n="proc.win"></label></div>
+            <select class="pick" id="winSelect">
+              <option value="16">16 × 16 px</option>
+              <option value="32" selected>32 × 32 px</option>
+              <option value="64">64 × 64 px</option>
+            </select>
+            <span class="hint" id="winHint"></span>
+          </div>
+          <div class="ctrl">
+            <div class="row"><label for="overlapSelect" data-i18n="proc.overlap"></label></div>
+            <select class="pick" id="overlapSelect">
+              <option value="0">0 %</option>
+              <option value="0.25">25 %</option>
+              <option value="0.5" selected>50 %</option>
+              <option value="0.75">75 %</option>
+            </select>
+            <span class="hint" id="overlapHint"></span>
+          </div>
+          <div class="ctrl">
+            <div class="row"><label for="passesSelect" data-i18n="proc.passes"></label></div>
+            <select class="pick" id="passesSelect">
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3" selected>3</option>
+            </select>
+            <span class="hint" id="passesHint"></span>
+          </div>
+          <details class="sub">
+            <summary data-i18n="proc.more"></summary>
+            <div class="body">
+              <div class="ctrl">
+                <div class="row"><label for="subpixSelect" data-i18n="proc.subpixel"></label></div>
+                <select class="pick" id="subpixSelect">
+                  <option value="gauss" data-i18n="sp.gauss"></option>
+                  <option value="parabolic" data-i18n="sp.parabolic"></option>
+                  <option value="centroid" data-i18n="sp.centroid"></option>
+                </select>
+                <span class="hint" id="subpixHint"></span>
+              </div>
+              <div class="ctrl">
+                <div class="row"><label for="threshSelect" data-i18n="proc.threshold"></label></div>
+                <select class="pick" id="threshSelect">
+                  <option value="1.5">1.5</option>
+                  <option value="2" selected>2.0</option>
+                  <option value="3">3.0</option>
+                  <option value="1000" data-i18n="proc.threshold.off"></option>
+                </select>
+                <span class="hint" id="threshHint"></span>
+              </div>
+            </div>
+          </details>
+        </div>
+      </details>
+
+      <details class="grp" id="gView" open>
+        <summary>
+          <h2 data-i18n="group.view"></h2>
+          <span class="gstate" id="gsView"></span><i class="gchev"></i>
+        </summary>
+        <div class="body">
+          <div class="ctrl">
+            <div class="row"><label for="bgSelect" data-i18n="view.bg"></label></div>
+            <select class="pick" id="bgSelect">
+              <option value="a" data-i18n="bg.a"></option>
+              <option value="blink" data-i18n="bg.blink"></option>
+              <option value="pair" data-i18n="bg.pair"></option>
+              <option value="speed" data-i18n="bg.speed"></option>
+              <option value="vort" data-i18n="bg.vort"></option>
+              <option value="err" data-i18n="bg.err"></option>
+              <option value="div" data-i18n="bg.div"></option>
+            </select>
+          </div>
+          <div class="ctrl">
+            <div class="row"><label data-i18n="view.overlay"></label></div>
+            <label class="chk"><input type="checkbox" id="ovVectors" checked><span class="box"></span>
+              <span class="swatch" style="background:var(--c1)"></span>
+              <span data-i18n="ov.vectors"></span></label>
+            <label class="chk"><input type="checkbox" id="ovTruth"><span class="box"></span>
+              <span class="swatch" style="background:var(--c2)"></span>
+              <span data-i18n="ov.truth"></span></label>
+            <label class="chk"><input type="checkbox" id="ovError"><span class="box"></span>
+              <span data-i18n="ov.error"></span></label>
+            <label class="chk"><input type="checkbox" id="ovGrid"><span class="box"></span>
+              <span data-i18n="ov.grid"></span></label>
+          </div>
+          <div class="ctrl">
+            <div class="row">
+              <label for="scaleRange" data-i18n="view.scale"></label>
+              <span class="val">
+                <input class="num-in" id="scaleNum" type="number" min="0.3" max="4" step="0.1">
+                <em class="unit">×</em>
+              </span>
+            </div>
+            <span class="hint" id="scaleHint"></span>
+            <input type="range" id="scaleRange" min="0.3" max="4" step="0.1" value="1">
+          </div>
+        </div>
+      </details>
+
+      <details class="grp" id="gUpload">
+        <summary>
+          <h2 data-i18n="upload.title"></h2>
+          <span class="gstate" id="gsUpload"></span><i class="gchev"></i>
+        </summary>
+        <div class="body">
+          <p class="note" data-i18n="upload.hint"></p>
+          <div class="ctrl">
+            <div class="row"><label for="fileA" data-i18n="upload.a"></label></div>
+            <input type="file" id="fileA" accept="image/*">
+          </div>
+          <div class="ctrl">
+            <div class="row"><label for="fileB" data-i18n="upload.b"></label></div>
+            <input type="file" id="fileB" accept="image/*">
+          </div>
+          <button type="button" id="clearUpload" class="btn" data-i18n="upload.clear"
+                  style="margin-top:9px"></button>
+          <textarea class="dump" id="dump" readonly hidden></textarea>
+        </div>
+      </details>
+
+      <details class="grp" id="gAbout">
+        <summary>
+          <h2 data-i18n="about.title"></h2>
+          <span class="gstate" data-i18n="about.state"></span><i class="gchev"></i>
+        </summary>
+        <div class="body">
+          <p class="phys" data-i18n="about.p1"></p>
+          <p class="phys" style="margin-top:7px" data-i18n="about.p2"></p>
+          <p class="phys" style="margin-top:7px" data-i18n="about.p3"></p>
+          <p class="phys" style="margin-top:7px" data-i18n="about.p4"></p>
+          <p class="note" data-i18n="about.limit"></p>
+          <p class="note" data-i18n="about.ref" data-i18n-html></p>
+        </div>
+      </details>
     </aside>
 
-    <!-- ---------- inspector ---------- -->
-    <aside class="panel inspector">
-      <div class="insp-head">
-        <h2 data-i18n="insp.title"></h2>
-        <p data-i18n="insp.sub"></p>
+    <!-- ───────── 뷰포트 ───────── -->
+    <div class="viewport">
+      <div class="stage-wrap picking" id="stageWrap">
+        <canvas id="stage" width="768" height="768"></canvas>
       </div>
-      <div class="insp-body">
-        <p class="hint" id="inspPick" data-i18n="insp.pick"></p>
+      <div class="veil" id="veil"><span data-i18n="stage.empty"></span></div>
+      <div class="progress" id="progress" style="width:0"></div>
+
+      <section class="panel p-stats" id="pStats">
+        <h3 data-i18n="panel.stats"></h3>
+        <dl class="stats">
+          <div class="heroline">
+            <span id="heroCap"></span>
+            <dd class="hero" id="heroVal">—</dd>
+          </div>
+          <dt data-i18n="m.subpx"></dt><dd id="stSubpx">—</dd>
+          <div class="sep"></div>
+          <dt data-i18n="m.vectors"></dt><dd id="stVectors">—</dd>
+          <dt data-i18n="m.valid"></dt><dd id="stValid">—</dd>
+          <dt data-i18n="m.peak"></dt><dd id="stPeak">—</dd>
+          <dt data-i18n="m.bias"></dt><dd id="stBias">—</dd>
+          <dt data-i18n="m.passes"></dt><dd id="stPasses">—</dd>
+          <dt data-i18n="m.time"></dt><dd id="stTime">—</dd>
+        </dl>
+      </section>
+
+      <section class="panel p-scope">
+        <h3 data-i18n="insp.title"></h3>
+        <p class="scope-empty" id="inspPick" data-i18n="insp.pick"></p>
         <div id="inspContent" hidden>
-          <div class="pair">
+          <div class="scope-pair">
             <div class="tile">
               <span class="cap" data-i18n="insp.winA"></span>
-              <canvas id="winA" width="240" height="240"></canvas>
+              <canvas id="winA" width="220" height="220"></canvas>
             </div>
             <div class="tile">
               <span class="cap" data-i18n="insp.winB"></span>
-              <canvas id="winB" width="240" height="240"></canvas>
+              <canvas id="winB" width="220" height="220"></canvas>
             </div>
           </div>
-          <div class="tile" style="margin-top:12px">
-            <div class="corr-head">
-              <span class="cap" data-i18n="insp.corr"></span>
-              <span class="seg">
-                <input type="radio" name="corrMode" id="corr3d" value="3d" checked><label for="corr3d" data-i18n="insp.mode3d"></label>
-                <input type="radio" name="corrMode" id="corr2d" value="2d"><label for="corr2d" data-i18n="insp.mode2d"></label>
-              </span>
-            </div>
-            <canvas id="corr" width="520" height="340"></canvas>
-            <p class="hint" data-i18n="insp.corr.hint"></p>
+          <div class="scope-head">
+            <span class="cap" data-i18n="insp.corr"></span>
+            <span class="seg" id="corrSeg">
+              <button type="button" data-mode="3d" class="on" data-i18n="insp.mode3d"></button>
+              <button type="button" data-mode="2d" data-i18n="insp.mode2d"></button>
+            </span>
           </div>
-          <dl class="readouts" style="margin-top:12px">
+          <div class="tile"><canvas id="corr" width="520" height="320"></canvas></div>
+          <dl class="readouts">
             <dt data-i18n="insp.pos"></dt><dd id="rPos"></dd>
             <dt data-i18n="insp.measured"></dt><dd class="hi" id="rMeas"></dd>
-            <dt data-i18n="insp.truthv"></dt><dd class="sig" id="rTruth"></dd>
+            <dt data-i18n="insp.truthv"></dt><dd class="alt" id="rTruth"></dd>
             <dt data-i18n="insp.errv"></dt><dd id="rErr"></dd>
             <dt data-i18n="insp.subpix"></dt><dd id="rSub"></dd>
             <dt data-i18n="insp.shift"></dt><dd id="rShift"></dd>
@@ -831,74 +619,30 @@ textarea.dump {
             <dt data-i18n="insp.status"></dt><dd><span class="verdict" id="rStatus"></span></dd>
           </dl>
         </div>
-      </div>
-    </aside>
-  </div>
+      </section>
 
-  <!-- ---------- readout ---------- -->
-  <section class="readout">
-    <div class="panel hero">
-      <span class="cap" data-i18n="m.rms"></span>
-      <span class="big" id="rmsVal">—<small> px</small></span>
-      <span class="sub" data-i18n="m.rms.sub"></span>
-      <span class="fraction" id="rmsFraction"></span>
-    </div>
-    <div class="panel facts">
-      <div>
-        <h3 data-i18n="group.process"></h3>
-        <table class="stats">
-          <tbody>
-            <tr><th data-i18n="m.vectors"></th><td id="stVectors">—</td></tr>
-            <tr><th data-i18n="m.valid"></th><td id="stValid">—</td></tr>
-            <tr><th data-i18n="m.peak"></th><td id="stPeak">—</td></tr>
-            <tr><th data-i18n="m.bias"></th><td id="stBias">—</td></tr>
-            <tr><th data-i18n="m.maxerr"></th><td id="stMax">—</td></tr>
-            <tr><th data-i18n="m.passes"></th><td id="stPasses">—</td></tr>
-            <tr><th data-i18n="m.time"></th><td id="stTime">—</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <div>
-        <h3 data-i18n="diag.title"></h3>
-        <div class="diags" id="diags"></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ---------- tail ---------- -->
-  <div class="tail">
-    <section class="panel card">
-      <h2 data-i18n="upload.title"></h2>
-      <p class="hint" data-i18n="upload.hint"></p>
-      <div class="upload-row">
-        <div class="field">
-          <label for="fileA" data-i18n="upload.a"></label>
-          <input type="file" id="fileA" accept="image/*">
+      <section class="panel p-legend">
+        <div class="bar" id="rampBar" hidden>
+          <span id="rampLo">0</span>
+          <span class="ramp" id="ramp"></span>
+          <span id="rampHi">1</span>
         </div>
-        <div class="field">
-          <label for="fileB" data-i18n="upload.b"></label>
-          <input type="file" id="fileB" accept="image/*">
+        <p class="legend-cap" id="legendCap"></p>
+        <div class="keys">
+          <span class="scalebar" id="keyScale"><i id="scaleTick"></i><span id="scaleText"></span></span>
+          <span class="key" style="color:var(--c1)" id="keyMeas"><i></i><span data-i18n="legend.measured"></span></span>
+          <span class="key" style="color:var(--c2)" id="keyTruth" hidden><i></i><span data-i18n="legend.truth"></span></span>
+          <span class="key" style="color:var(--bad)" id="keyRej"><i></i><span data-i18n="legend.rejected"></span></span>
         </div>
-      </div>
-      <div class="actions">
-        <button type="button" id="clearUpload" data-i18n="upload.clear"></button>
-        <button type="button" id="copyCsv" data-i18n="copy.csv"></button>
-      </div>
-      <p class="toast" id="toast"></p>
-      <textarea class="dump" id="dump" readonly hidden></textarea>
-    </section>
+      </section>
 
-    <section class="panel card">
-      <h2 data-i18n="about.title"></h2>
-      <p data-i18n="about.p1"></p>
-      <p data-i18n="about.p2"></p>
-      <p data-i18n="about.p3"></p>
-      <p data-i18n="about.p4"></p>
-      <p class="fineprint" data-i18n="about.ref" data-i18n-html></p>
-      <p class="fineprint" data-i18n="about.limit"></p>
-    </section>
+      <section class="panel p-warn" id="pWarn" hidden>
+        <p class="wtitle"><span class="wmark">▲</span><span id="warnTitle"></span></p>
+        <p class="wbody" id="warnBody"></p>
+        <p class="wfix" id="warnFix"></p>
+      </section>
+    </div>
   </div>
-
 </div>
 <script>
 /* ===== js/fft.js ===== */
@@ -1032,35 +776,24 @@ textarea.dump {
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 
 /* ===== js/colormap.js ===== */
-/* PIV Simulator — colour ramps.
+/* PIV Simulator — 색 램프.
  *
- * Three jobs, three kinds of ramp:
- *   speed / error  -> sequential, one hue family, monotone in lightness
- *   vorticity      -> diverging, two hues with a neutral midpoint at zero
- *   correlation    -> sequential dark-to-bright instrument readout
- * Each ramp has a light-theme and a dark-theme instance; the dark one is
- * chosen against the dark surface, not flipped automatically.
+ * 디자인 지침대로 스칼라장은 viridis 하나로 통일한다(명도가 단조로워
+ * 흑백 인쇄와 색맹에서도 순서가 유지된다). 무지개(jet)는 쓰지 않는다.
+ * 부호가 있는 장(와도·발산)만 발산형으로, 두 끝을 차트 계열색 --c1(navy)과
+ * --c6(brick)에 맞추고 가운데는 바탕에 가까운 중성색을 둔다.
+ * 단일 라이트 테마이므로 테마별 변종이 없다.
  */
 (function (root) {
   'use strict';
 
   var RAMPS = {
-    speed: {
-      light: ['#F1F6F3', '#C3E1D5', '#84C6B0', '#41A085', '#177661', '#0A4239'],
-      dark: ['#07231F', '#0D4B3F', '#177E67', '#37AF8C', '#7ED6B6', '#DCF4E8']
-    },
-    error: {
-      light: ['#FBF4EF', '#F3D8C2', '#E8A578', '#D06E38', '#A3400F', '#5E1D02'],
-      dark: ['#1F1208', '#4A2409', '#7C3D0C', '#B4631F', '#E39A55', '#F8D9B3']
-    },
-    vorticity: {
-      light: ['#1A5480', '#4C8CB8', '#9FC2D9', '#EAEAE6', '#E2B49E', '#C36B4B', '#8C2C17'],
-      dark: ['#9BD6F6', '#5CA5D6', '#31658B', '#2A3336', '#8D4527', '#CA7340', '#F3B385']
-    },
-    correlation: {
-      light: ['#0B0A1A', '#2E1A50', '#6C2069', '#A62C60', '#D65340', '#F09B3C', '#F9E18B', '#FFFCEC'],
-      dark: ['#0B0A1A', '#2E1A50', '#6C2069', '#A62C60', '#D65340', '#F09B3C', '#F9E18B', '#FFFCEC']
-    }
+    /* viridis */
+    field: ['#440154', '#472d7b', '#3b528b', '#2c728e', '#21918c',
+            '#28ae80', '#5ec962', '#addc30', '#fde725'],
+    /* navy ← 중성 → brick */
+    diverging: ['#0f4c81', '#3f74a2', '#82a3c2', '#c3d0dc', '#eceef0',
+                '#e3c6b8', '#cf9179', '#bd6249', '#a83f2b']
   };
 
   function hex(h) {
@@ -1068,18 +801,14 @@ textarea.dump {
   }
 
   var cache = Object.create(null);
-  function stops(name, theme) {
-    var key = name + '|' + theme;
-    if (!cache[key]) {
-      var r = RAMPS[name] || RAMPS.speed;
-      cache[key] = (r[theme] || r.light).map(hex);
-    }
-    return cache[key];
+  function stops(name) {
+    if (!cache[name]) cache[name] = (RAMPS[name] || RAMPS.field).map(hex);
+    return cache[name];
   }
 
   /* t in [0,1] -> [r,g,b] */
-  function sample(name, t, theme, out) {
-    var s = stops(name, theme);
+  function sample(name, t, out) {
+    var s = stops(name);
     t = t !== t ? 0 : (t < 0 ? 0 : (t > 1 ? 1 : t));
     var f = t * (s.length - 1), i = Math.floor(f), w = f - i;
     var a = s[i], b = s[Math.min(s.length - 1, i + 1)];
@@ -1090,25 +819,24 @@ textarea.dump {
     return out;
   }
 
-  function css(name, t, theme) {
-    var c = sample(name, t, theme);
+  function css(name, t) {
+    var c = sample(name, t);
     return 'rgb(' + Math.round(c[0]) + ',' + Math.round(c[1]) + ',' + Math.round(c[2]) + ')';
   }
 
-  /* CSS gradient string for a colour bar. lo/hi restrict it to part of the
-   * ramp, so a bar can show exactly the slice the marks were drawn from. */
-  function gradient(name, theme, deg, lo, hi) {
+  /* 색 띠용 CSS gradient. lo/hi 로 램프의 일부만 쓸 수 있다. */
+  function gradient(name, deg, lo, hi) {
     var parts = [], n = 12, c;
     lo = lo || 0; hi = hi === undefined ? 1 : hi;
     for (var i = 0; i <= n; i++) {
-      c = sample(name, lo + (hi - lo) * (i / n), theme);
+      c = sample(name, lo + (hi - lo) * (i / n));
       parts.push('rgb(' + Math.round(c[0]) + ',' + Math.round(c[1]) + ',' + Math.round(c[2]) +
         ') ' + Math.round(100 * i / n) + '%');
     }
     return 'linear-gradient(' + (deg === undefined ? 90 : deg) + 'deg,' + parts.join(',') + ')';
   }
 
-  /* A readable range: [0,max] for sequential, symmetric for diverging. */
+  /* 읽기 좋은 범위: 순차는 [0,max], 발산은 0 을 가운데 둔 대칭 */
   function niceRange(arr, status, symmetric, pct) {
     var vals = [], i;
     for (i = 0; i < arr.length; i++) {
@@ -1677,6 +1405,20 @@ textarea.dump {
     return out;
   }
 
+  /* 패스마다 쓸 창 크기. 화면의 힌트와 엔진이 어긋나지 않도록 여기서만 정한다.
+   * 첫 패스 창이 영상의 1/4 보다 넓으면 벡터가 너무 적어 중앙값 검정이 힘을
+   * 못 쓰므로 거기서 자르고, 잘려서 같아진 패스는 접는다. */
+  function schedule(W, H, win, passes) {
+    var cap = Math.pow(2, Math.floor(Math.log(Math.min(W, H) / 4) / Math.LN2));
+    var maxWin = Math.max(win, Math.min(cap, win * Math.pow(2, passes - 1)));
+    var out = [];
+    for (var q = 0; q < passes; q++) {
+      var wq = Math.min(win * Math.pow(2, passes - 1 - q), maxWin);
+      if (out[out.length - 1] !== wq) out.push(wq);
+    }
+    return out;
+  }
+
   /* ---- main ------------------------------------------------------------- */
   /* cfg: imgA, imgB, width, height, win, overlap, passes, subpixel,
    *      threshold, replace, masked(x,y), snrMin */
@@ -1689,15 +1431,7 @@ textarea.dump {
     var u = null, v = null;
     var passInfo = [];
 
-    /* The first pass must still resolve the flow: a window wider than a quarter
-     * of the image gives too few vectors for the median test to police. */
-    var capWin = Math.pow(2, Math.floor(Math.log(Math.min(W, H) / 4) / Math.LN2));
-    var maxWin = Math.max(cfg.win, Math.min(capWin, cfg.win * Math.pow(2, nPasses - 1)));
-    var sched = [];
-    for (var q = 0; q < nPasses; q++) {
-      var wq = Math.min(cfg.win * Math.pow(2, nPasses - 1 - q), maxWin);
-      if (sched[sched.length - 1] !== wq) sched.push(wq);   /* capping can repeat */
-    }
+    var sched = schedule(W, H, cfg.win, nPasses);
     nPasses = sched.length;
 
     for (var p = 0; p < nPasses; p++) {
@@ -1860,14 +1594,19 @@ textarea.dump {
   }
 
   root.PIVSim.PIV = {
-    run: run, inspect: inspect, derive: derive, truth: truth,
+    run: run, inspect: inspect, derive: derive, truth: truth, schedule: schedule,
     extract: extract, peakFit: peakFit, makeGrid: makeGrid, subpixel: subpixel
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 
 /* ===== js/render.js ===== */
-/* PIV Simulator — canvas drawing.
- * Everything here takes image-pixel coordinates; the caller sets the transform.
+/* PIV Simulator — 캔버스 그리기.
+ * 좌표는 전부 영상 픽셀 기준이고, 변환은 부르는 쪽에서 건다.
+ *
+ * 입자 영상은 반전해서(흰 바닥·검은 입자) 그린다. 실제 PIV 원본은 검은
+ * 바탕이지만, 논문 그림과 인쇄가 전부 흰 바닥이라 학술 그림에서는 반전해
+ * 싣는 것이 관행이고, 흰 바닥 위에서는 navy 화살표가 그대로 읽힌다.
+ * 상관 계산은 언제나 반전 전의 원본 값으로 한다.
  */
 (function (root) {
   'use strict';
@@ -1880,43 +1619,72 @@ textarea.dump {
     return c;
   }
 
-  /* ---- particle images -------------------------------------------------- */
+  /* 표시용 밝기 범위 — 계산에는 쓰지 않는다.
+   *
+   * 바탕값과 입자값을 영상 히스토그램에서 직접 찾아 0~1 로 편다. 고정된
+   * 범위를 쓰면 시트 두께·노이즈·씨딩을 바꿀 때마다 바탕이 회색으로 뜨거나
+   * 입자가 사라진다. 올린 영상이 이미 흰 바탕이면(입자가 어두우면) 그쪽
+   * 극성을 알아서 잡는다. 상관은 어느 극성이든 같은 답을 준다 — 평균을 뺀
+   * 상관에서 부호를 뒤집어도 conj(-A)(-B) = conj(A)B 이기 때문이다.
+   *
+   * 돌려주는 값은 "입자다움" 0~1 이고, 그리는 쪽에서 흰 바닥에 그만큼 잉크를
+   * 얹는다.
+   */
+  function displayLUT(img) {
+    var hist = new Uint32Array(256), i, n = img.length;
+    for (i = 0; i < n; i++) hist[img[i] | 0]++;
+    function pct(p) {
+      var target = n * p, acc = 0;
+      for (var k = 0; k < 256; k++) { acc += hist[k]; if (acc >= target) return k; }
+      return 255;
+    }
+    var bg, sig;
+    if (pct(0.2) > 140) { bg = pct(0.8); sig = pct(0.005); }   /* 이미 흰 바탕 */
+    else { bg = pct(0.2); sig = pct(0.995); }                  /* 보통의 PIV 원본 */
+    var span = sig - bg;
+    if (Math.abs(span) < 8) span = span < 0 ? -8 : 8;
+    var lut = new Float32Array(256);
+    for (i = 0; i < 256; i++) {
+      var tt = (i - bg) / span;
+      lut[i] = Math.pow(tt < 0 ? 0 : (tt > 1 ? 1 : tt), 0.72);
+    }
+    return lut;
+  }
 
-  /* Grayscale with a faint 532 nm cast, the way a Nd:YAG-lit frame reads. */
+  /* ---- 입자 영상 -------------------------------------------------------- */
+
   function particleImage(ctx, img, W, H) {
-    var out = ctx.createImageData(W, H), d = out.data;
-    /* display gamma only — the correlation still runs on the raw counts */
-    var lut = new Float32Array(256), t;
-    for (t = 0; t < 256; t++) lut[t] = 255 * Math.pow(t / 255, 0.78);
+    var out = ctx.createImageData(W, H), d = out.data, L = displayLUT(img);
     for (var i = 0, j = 0; i < img.length; i++, j += 4) {
-      var v = lut[img[i] | 0];
-      d[j] = v * 0.80;
-      d[j + 1] = v;
-      d[j + 2] = v * 0.86;
+      var v = L[img[i] | 0];              /* 0..1, 밝을수록 입자 */
+      d[j] = 255 - 246 * v;               /* 반전: 입자는 짙은 남색 기미 */
+      d[j + 1] = 255 - 249 * v;
+      d[j + 2] = 255 - 236 * v;
       d[j + 3] = 255;
     }
     return out;
   }
 
-  /* Frame A in laser green, frame B in magenta: every paired particle shows as
-   * a green dot with its magenta partner a few pixels away. */
+  /* 두 프레임을 한 장에: A 는 navy, B 는 ochre 로 감산 혼합.
+   * 짝지어진 입자는 남색 점 옆에 황토색 점으로 보인다. */
   function pairImage(ctx, a, b, W, H) {
-    var out = ctx.createImageData(W, H), d = out.data;
-    var lut = new Float32Array(256), t;
-    for (t = 0; t < 256; t++) lut[t] = 255 * Math.pow(t / 255, 0.78);
+    var out = ctx.createImageData(W, H), d = out.data, L = displayLUT(a);
+    /* 흰 바닥에서 뺄 양 = 255 - 색 */
+    var ar = 255 - 15, ag = 255 - 76, ab = 255 - 129;     /* --c1 #0f4c81 */
+    var br = 255 - 168, bg = 255 - 118, bb = 255 - 31;    /* --c2 #a8761f */
     for (var i = 0, j = 0; i < a.length; i++, j += 4) {
-      var va = lut[a[i] | 0], vb = lut[b[i] | 0];
-      d[j] = vb * 0.95;
-      d[j + 1] = va;
-      d[j + 2] = vb * 0.95;
+      var va = L[a[i] | 0], vb = L[b[i] | 0];
+      d[j] = Math.max(0, 255 - (va * ar + vb * br));
+      d[j + 1] = Math.max(0, 255 - (va * ag + vb * bg));
+      d[j + 2] = Math.max(0, 255 - (va * ab + vb * bb));
       d[j + 3] = 255;
     }
     return out;
   }
 
-  /* ---- scalar field raster ---------------------------------------------- */
+  /* ---- 스칼라장 래스터 --------------------------------------------------- */
 
-  function fieldImage(ctx, res, scalar, range, ramp, theme, W, H, maskFn) {
+  function fieldImage(ctx, res, scalar, range, ramp, W, H, maskFn) {
     var out = ctx.createImageData(W, H), d = out.data;
     var nx = res.nx, ny = res.ny, step = res.step;
     var x0 = res.xs[0], y0 = res.ys[0];
@@ -1938,32 +1706,25 @@ textarea.dump {
         var q00 = val(i0, j0), q10 = val(i0 + 1, j0), q01 = val(i0, j0 + 1), q11 = val(i0 + 1, j0 + 1);
         var k = (py * W + px) * 4;
         var near = (tx < 0.5 ? (ty < 0.5 ? q00 : q01) : (ty < 0.5 ? q10 : q11));
-        /* inside the body there is no data — cut the hole on the real geometry,
-         * not on the blocky set of masked vector cells */
+        /* 물체 안은 값이 없다 — 벡터 칸이 아니라 실제 형상으로 도려낸다 */
         if (maskFn ? maskFn(px + 0.5, py + 0.5) : near.m) { d[k + 3] = 0; continue; }
         var v00 = q00.m ? near.v : q00.v, v10 = q10.m ? near.v : q10.v;
         var v01 = q01.m ? near.v : q01.v, v11 = q11.m ? near.v : q11.v;
         var v = (v00 * (1 - tx) + v10 * tx) * (1 - ty) + (v01 * (1 - tx) + v11 * tx) * ty;
-        Color.sample(ramp, (v - lo) / span, theme, rgb);
+        Color.sample(ramp, (v - lo) / span, rgb);
         d[k] = rgb[0]; d[k + 1] = rgb[1]; d[k + 2] = rgb[2]; d[k + 3] = 255;
       }
     }
     return out;
   }
 
-  /* ---- vectors ---------------------------------------------------------- */
+  /* ---- 벡터 ------------------------------------------------------------- */
 
-  /* opts: scale, lineWidth, color | ramp+range+theme, limit (progressive draw),
-   *       showRejected, rejectedColor */
+  /* opts: scale, lineWidth, color, halo, limit, showRejected, rejectedColor */
   function vectors(ctx, res, opts) {
     var n = res.nx * res.ny, limit = opts.limit === undefined ? n : opts.limit;
     var s = opts.scale, lw = opts.lineWidth || 1.1;
-    var buckets = 14, paths = [], i;
-    var colored = !!opts.ramp;
-    for (i = 0; i < (colored ? buckets : 1); i++) paths.push(new Path2D());
-    var rejected = new Path2D(), hasRejected = false;
-    var lo = opts.range ? opts.range[0] : 0;
-    var span = opts.range ? (opts.range[1] - opts.range[0]) || 1 : 1;
+    var main = new Path2D(), rejected = new Path2D(), hasRejected = false;
 
     for (var k = 0; k < limit && k < n; k++) {
       if (res.status[k] === 2) continue;
@@ -1971,15 +1732,10 @@ textarea.dump {
       var x = res.xs[i0], y = res.ys[j0];
       var u = res.u[k] * s, v = res.v[k] * s;
       var len = Math.hypot(u, v);
-      var p;
+      var p = main;
       if (res.status[k] !== 0 && opts.showRejected) { p = rejected; hasRejected = true; }
-      else if (colored) {
-        var t = (Math.hypot(res.u[k], res.v[k]) - lo) / span;
-        var b = Math.floor(t * buckets);
-        p = paths[b < 0 ? 0 : (b > buckets - 1 ? buckets - 1 : b)];
-      } else p = paths[0];
 
-      if (len < 0.35) {           /* effectively still: a dot reads better than a stub */
+      if (len < 0.35) {           /* 거의 정지 — 토막보다 점이 낫다 */
         p.moveTo(x - 0.35, y);
         p.lineTo(x + 0.35, y);
         continue;
@@ -1997,31 +1753,26 @@ textarea.dump {
     }
 
     ctx.save();
-    ctx.lineWidth = lw;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    if (opts.halo) {             /* dark outline keeps arrows legible on any ground */
+    if (opts.halo) {
       ctx.strokeStyle = opts.halo;
-      ctx.lineWidth = lw + 1.4;
-      for (i = 0; i < paths.length; i++) ctx.stroke(paths[i]);
+      ctx.lineWidth = lw + 1.5;
+      ctx.stroke(main);
       if (hasRejected) ctx.stroke(rejected);
-      ctx.lineWidth = lw;
     }
-    var rlo = opts.rampLo || 0;
-    for (i = 0; i < paths.length; i++) {
-      ctx.strokeStyle = colored
-        ? Color.css(opts.ramp, rlo + (1 - rlo) * ((i + 0.5) / buckets), opts.theme)
-        : opts.color;
-      ctx.stroke(paths[i]);
-    }
+    ctx.lineWidth = lw;
+    ctx.strokeStyle = opts.color;
+    ctx.stroke(main);
     if (hasRejected) {
-      ctx.strokeStyle = opts.rejectedColor || '#E0574B';
+      ctx.strokeStyle = opts.rejectedColor || '#a83f2b';
       ctx.stroke(rejected);
     }
     ctx.restore();
   }
 
-  /* Reference arrows from the analytic solution, drawn under the measured ones. */
+  /* 참값 — 측정 화살표 밑에 깔리는 넓은 띠. 둘이 맞으면 띠가 화살표를
+   * 감싸고, 틀리면 띠가 옆으로 삐져나온다. */
   function truthVectors(ctx, res, truth, opts) {
     var p = new Path2D();
     for (var k = 0; k < res.nx * res.ny; k++) {
@@ -2042,16 +1793,15 @@ textarea.dump {
     ctx.restore();
   }
 
-  /* Error vectors, magnified: measured minus exact. */
   function errorVectors(ctx, res, truth, opts) {
     var p = new Path2D();
     for (var k = 0; k < res.nx * res.ny; k++) {
       if (res.status[k] === 2) continue;
       var i0 = k % res.nx, j0 = (k - i0) / res.nx;
       var x = res.xs[i0], y = res.ys[j0];
-      var u = (res.u[k] - truth.tu[k]) * opts.scale, v = (res.v[k] - truth.tv[k]) * opts.scale;
       p.moveTo(x, y);
-      p.lineTo(x + u, y + v);
+      p.lineTo(x + (res.u[k] - truth.tu[k]) * opts.scale,
+               y + (res.v[k] - truth.tv[k]) * opts.scale);
     }
     ctx.save();
     ctx.strokeStyle = opts.color;
@@ -2092,29 +1842,33 @@ textarea.dump {
     ctx.restore();
   }
 
-  function windowMarker(ctx, cx, cy, win, color, lw) {
+  function windowMarker(ctx, cx, cy, win, color, lw, halo) {
+    var x = Math.round(cx - win / 2), y = Math.round(cy - win / 2);
     ctx.save();
+    if (halo) {
+      ctx.strokeStyle = halo;
+      ctx.lineWidth = (lw || 1.6) + 1.6;
+      ctx.strokeRect(x, y, win, win);
+    }
     ctx.strokeStyle = color;
     ctx.lineWidth = lw || 1.6;
-    ctx.setLineDash([]);
-    ctx.strokeRect(Math.round(cx - win / 2), Math.round(cy - win / 2), win, win);
+    ctx.strokeRect(x, y, win, win);
     ctx.restore();
   }
 
-  /* ---- inspector panels ------------------------------------------------- */
+  /* ---- 상관 현미경 ------------------------------------------------------ */
 
-  /* Interrogation window blown up, one sensor pixel per block. */
-  function zoom(canvas, arr, win, tint) {
+  /* 조사창 확대 — 센서 픽셀 한 칸이 한 블록. 영상과 같이 반전한다. */
+  function zoom(canvas, arr, win) {
     var ctx = canvas.getContext('2d');
     var src = offscreen(win, win), sctx = src.getContext('2d');
     var data = sctx.createImageData(win, win), d = data.data, i, j;
-    var max = 1;
-    for (i = 0; i < arr.length; i++) if (arr[i] > max) max = arr[i];
+    var L = displayLUT(arr);
     for (i = 0, j = 0; i < arr.length; i++, j += 4) {
-      var v = 255 * Math.pow(Math.max(0, arr[i]) / max, 0.85);
-      d[j] = v * (tint ? 0.80 : 0.95);
-      d[j + 1] = v;
-      d[j + 2] = v * (tint ? 0.86 : 0.95);
+      var v = L[arr[i] | 0];
+      d[j] = 255 - 246 * v;
+      d[j + 1] = 255 - 249 * v;
+      d[j + 2] = 255 - 236 * v;
       d[j + 3] = 255;
     }
     sctx.putImageData(data, 0, 0);
@@ -2123,8 +1877,8 @@ textarea.dump {
     ctx.drawImage(src, 0, 0, canvas.width, canvas.height);
   }
 
-  /* Correlation plane as a heat map, with the peak called out. */
-  function corrMap(canvas, insp, half, theme, ink) {
+  /* 상관면 — 평면 */
+  function corrMap(canvas, insp, half) {
     var win = insp.win, map = insp.map, ctx = canvas.getContext('2d');
     var n = 2 * half + 1, c0 = win >> 1;
     var lo = Infinity, hi = -Infinity, i, j, v;
@@ -2140,7 +1894,7 @@ textarea.dump {
     for (j = 0; j < n; j++) {
       for (i = 0; i < n; i++) {
         v = (map[(c0 - half + j) * win + (c0 - half + i)] - lo) / span;
-        Color.sample('correlation', v, theme, rgb);
+        Color.sample('field', v, rgb);
         var k = (j * n + i) * 4;
         d[k] = rgb[0]; d[k + 1] = rgb[1]; d[k + 2] = rgb[2]; d[k + 3] = 255;
       }
@@ -2148,38 +1902,37 @@ textarea.dump {
     sctx.putImageData(data, 0, 0);
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    /* the plane is square; centre it in whatever box the panel gives us */
     var box = Math.min(canvas.width, canvas.height);
     var ox = (canvas.width - box) / 2, oy = (canvas.height - box) / 2;
     ctx.drawImage(src, ox, oy, box, box);
 
-    /* peak crosshair, in sub-pixel position */
     var s = box / n;
     var px = ox + (insp.peak.dx + half + 0.5) * s;
     var py = oy + (insp.peak.dy + half + 0.5) * s;
     ctx.save();
-    ctx.strokeStyle = ink;
-    ctx.lineWidth = 1.25;
-    ctx.beginPath();
-    ctx.moveTo(px - 9, py); ctx.lineTo(px - 2.5, py);
-    ctx.moveTo(px + 2.5, py); ctx.lineTo(px + 9, py);
-    ctx.moveTo(px, py - 9); ctx.lineTo(px, py - 2.5);
-    ctx.moveTo(px, py + 2.5); ctx.lineTo(px, py + 9);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(px, py, 2, 0, 2 * Math.PI);
-    ctx.fillStyle = ink; ctx.fill();
-    /* zero-displacement reference */
-    ctx.globalAlpha = 0.5;
+    /* 십자선은 흰 테를 깔고 잉크로 — viridis 양 끝에서 모두 읽힌다 */
+    for (var pass = 0; pass < 2; pass++) {
+      ctx.strokeStyle = pass ? '#15181c' : 'rgba(255,255,255,.85)';
+      ctx.lineWidth = pass ? 1.4 : 3.4;
+      ctx.beginPath();
+      ctx.moveTo(px - 10, py); ctx.lineTo(px - 3, py);
+      ctx.moveTo(px + 3, py); ctx.lineTo(px + 10, py);
+      ctx.moveTo(px, py - 10); ctx.lineTo(px, py - 3);
+      ctx.moveTo(px, py + 3); ctx.lineTo(px, py + 10);
+      ctx.stroke();
+    }
+    /* 변위 0 자리 */
     ctx.setLineDash([2, 3]);
+    ctx.strokeStyle = 'rgba(255,255,255,.75)';
+    ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.arc(ox + (half + 0.5) * s, oy + (half + 0.5) * s, Math.max(3, s * 0.45), 0, 2 * Math.PI);
     ctx.stroke();
     ctx.restore();
   }
 
-  /* The correlation plane as a surface — the iconic PIV picture. */
-  function corrSurface(canvas, insp, half, theme, ink, accent) {
+  /* 상관면 — 입체. PIV 에서 가장 많이 보는 그림이다. */
+  function corrSurface(canvas, insp, half, markColor) {
     var win = insp.win, map = insp.map, ctx = canvas.getContext('2d');
     var n = 2 * half + 1, c0 = win >> 1, i, j, v;
     var stride = Math.max(1, Math.round(n / 26));
@@ -2196,14 +1949,12 @@ textarea.dump {
     var W = canvas.width, H = canvas.height;
     ctx.clearRect(0, 0, W, H);
     var ax = W * 0.40 / (m - 1), ay = H * 0.17 / (m - 1), az = H * 0.56;
-    var cx = W / 2, cy = H * 0.74;
+    var cx = W / 2, cy = H * 0.76;
     function proj(i, j, h) {
       return [cx + (i - (m - 1) / 2) * ax - (j - (m - 1) / 2) * ax,
               cy + ((i - (m - 1) / 2) + (j - (m - 1) / 2)) * ay - h * az];
     }
-    var rgb = [0, 0, 0];
-    /* painter's order: far cells (small i+j) first */
-    var cells = [];
+    var rgb = [0, 0, 0], cells = [];
     for (j = 0; j < m - 1; j++) for (i = 0; i < m - 1; i++) cells.push([i, j]);
     cells.sort(function (a, b) { return (a[0] + a[1]) - (b[0] + b[1]); });
     ctx.lineWidth = 0.5;
@@ -2213,23 +1964,21 @@ textarea.dump {
       var h01 = (z[(jj + 1) * m + ii] - lo) / span, h11 = (z[(jj + 1) * m + ii + 1] - lo) / span;
       var p00 = proj(ii, jj, h00), p10 = proj(ii + 1, jj, h10);
       var p11 = proj(ii + 1, jj + 1, h11), p01 = proj(ii, jj + 1, h01);
-      var hm = (h00 + h10 + h01 + h11) / 4;
-      Color.sample('correlation', hm, theme, rgb);
+      Color.sample('field', (h00 + h10 + h01 + h11) / 4, rgb);
       ctx.beginPath();
       ctx.moveTo(p00[0], p00[1]); ctx.lineTo(p10[0], p10[1]);
       ctx.lineTo(p11[0], p11[1]); ctx.lineTo(p01[0], p01[1]);
       ctx.closePath();
       ctx.fillStyle = 'rgb(' + Math.round(rgb[0]) + ',' + Math.round(rgb[1]) + ',' + Math.round(rgb[2]) + ')';
       ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+      ctx.strokeStyle = 'rgba(255,255,255,.16)';
       ctx.stroke();
     }
-    /* marker on the fitted peak */
     var pi = (insp.peak.ix - (c0 - half)) / stride, pj = (insp.peak.iy - (c0 - half)) / stride;
     var top = proj(pi, pj, 1.0);
     var base = proj(pi, pj, (insp.peak.peak - lo) / span);
     ctx.save();
-    ctx.strokeStyle = accent;
+    ctx.strokeStyle = markColor || '#15181c';
     ctx.setLineDash([3, 3]);
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -2238,7 +1987,7 @@ textarea.dump {
     ctx.setLineDash([]);
     ctx.beginPath();
     ctx.arc(base[0], base[1], 2.5, 0, 2 * Math.PI);
-    ctx.fillStyle = accent; ctx.fill();
+    ctx.fillStyle = markColor || '#15181c'; ctx.fill();
     ctx.restore();
   }
 
@@ -2251,48 +2000,45 @@ textarea.dump {
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 
 /* ===== js/i18n.js ===== */
-/* PIV Simulator — Korean / English strings.
- * The DOM carries only data-i18n keys; all copy lives here.
+/* PIV Simulator — 한국어 / 영어 문구.
+ * DOM 에는 data-i18n 키만 있고 글은 전부 여기에 있다.
+ * {0} 자리는 tf(key, ...) 가 채운다 — 힌트와 경고는 값을 품어야 하기 때문이다.
  */
 (function (root) {
   'use strict';
 
   var D = {
     ko: {
-      'doc.title': 'PIV 시뮬레이터',
-      'app.eyebrow': 'PARTICLE IMAGE VELOCIMETRY',
-      'app.title': '두 장의 사진에서 유동장을 꺼내기',
-      'app.lede': '레이저로 얇게 자른 물속에 작은 입자를 뿌리고, 아주 짧은 Δt 간격으로 두 장을 찍습니다. 입자들이 어디로 몇 픽셀 갔는지 컴퓨터가 찾아내면 — 그것이 속도장입니다. 아래 버튼을 누르면 그 계산이 실제로 돌아갑니다.',
-      'app.langLabel': 'English',
-      'app.themeLabel': '테마 전환',
+      'doc.title': 'PIV Simulator',
+      'app.title': 'PIV 시뮬레이터',
+      'app.tag': '입자영상 상호상관',
 
-      'step.1.n': '1단계',
-      'step.1.t': '씨딩',
+      'step.1.t': '1 씨딩',
       'step.1.d': '유체에 빛을 잘 반사하는 작은 입자를 뿌립니다. 입자는 유체를 따라갑니다.',
-      'step.2.n': '2단계',
-      'step.2.t': '이중 노출',
-      'step.2.d': '레이저 시트로 한 면만 밝히고 Δt 간격으로 두 장을 찍습니다.',
-      'step.3.n': '3단계',
-      'step.3.t': '상호상관',
-      'step.3.d': '영상을 작은 창으로 나누고, 두 창을 밀어가며 가장 잘 겹치는 위치를 찾습니다.',
-      'step.4.n': '4단계',
-      'step.4.t': '속도장',
+      'step.2.t': '2 이중 노출',
+      'step.2.d': '레이저 시트로 한 면만 밝히고 Δt 간격으로 두 장을 찍습니다. A와 B를 번갈아 보면 입자가 가는 방향이 보입니다.',
+      'step.3.t': '3 상호상관',
+      'step.3.d': '영상을 작은 창으로 나누고, 두 창을 밀어가며 가장 잘 겹치는 위치를 찾습니다. 오른쪽 상관면의 봉우리가 그 위치입니다.',
+      'step.4.t': '4 속도장',
       'step.4.d': '창마다 벡터 하나. 수백 개가 모이면 유동 구조가 드러납니다.',
 
       'run': 'PIV 계산 실행',
       'run.again': '다시 계산',
       'run.busy': '계산 중…',
       'reshoot': '새로 촬영',
-      'reshoot.hint': '입자를 새로 뿌려 다시 찍습니다',
+      'copy.csv': 'CSV 복사',
+      'copy.done': '벡터장을 복사했습니다',
+      'copy.fail': '아래 내용을 직접 복사하세요',
 
       'group.flow': '유동',
       'group.record': '촬영 조건',
       'group.process': '계산 조건',
       'group.view': '보기',
+      'rec.more': '덜 바꾸는 것',
+      'proc.more': '덜 바꾸는 것',
 
       'flow.kind': '유동 종류',
       'flow.disp': '입자 변위 Δx',
-      'flow.disp.hint': '프레임 간 대표 변위입니다. Δt를 키우면 같이 커집니다.',
       'grp.basic': '기본',
       'grp.shear': '전단 유동',
       'grp.vortex': '소용돌이',
@@ -2307,25 +2053,32 @@ textarea.dump {
       'f.rotation': '강체 회전',
       'f.cylinder': '원기둥 주위 (퍼텐셜)',
       'f.street': '카르만 소용돌이 열',
+      'fh.uniform': '어디서나 같은 변위 — 부화소 정밀도를 보기에 가장 좋습니다',
+      'fh.channel': '벽에서 0, 가운데가 최대인 포물선 분포',
+      'fh.shear': 'tanh 전단층에 켈빈-헬름홀츠 말림을 얹었습니다',
+      'fh.jet': 'sech² 분포가 하류로 퍼집니다',
+      'fh.stagnation': '벽에 부딪혀 좌우로 갈라지는 유동',
+      'fh.vortex': '코어에서 속도 기울기가 가장 큽니다 — 창을 줄이면 오차가 줄어듭니다',
+      'fh.vortexPair': '반대로 도는 둘이 서로를 밀어 사이에 하강류가 생깁니다',
+      'fh.rotation': '와도가 어디서나 2Ω 로 같아야 합니다',
+      'fh.cylinder': '퍼텐셜 유동이라 와도가 0 이어야 합니다. 물체 안은 측정할 수 없습니다',
+      'fh.street': '후류에서 소용돌이 부호가 번갈아 바뀝니다',
 
       'rec.seed': '창당 입자 수 N_I',
-      'rec.seed.hint': '32×32 창 하나에 들어가는 입자 수. 8개 이상이면 상관 피크가 안정적입니다.',
       'rec.dp': '입자상 지름 dτ',
-      'rec.dp.hint': '2~3 px가 최적입니다. 너무 작으면 부화소 보간이 픽셀에 달라붙습니다(peak locking).',
       'rec.noise': '센서 노이즈',
       'rec.loss': '면외 손실',
-      'rec.loss.hint': '레이저 시트를 벗어나 짝을 잃은 입자의 비율입니다.',
       'rec.size': '영상 크기',
+      'unit.count': '개',
       'proc.win': '조사창 크기',
-      'proc.win.hint': '이 창 안의 입자들이 함께 얼마나 움직였는지를 한 개의 벡터로 냅니다.',
       'proc.overlap': '창 중첩률',
       'proc.passes': '패스 수',
-      'proc.passes.hint': '큰 창으로 먼저 대략 찾고, 그 값만큼 창을 밀어 작은 창으로 다시 찾습니다.',
       'proc.subpixel': '부화소 피팅',
+      'proc.threshold': '이상치 검정 문턱값',
+      'proc.threshold.off': '끄기',
       'sp.gauss': '가우스 3점',
       'sp.parabolic': '포물선 3점',
       'sp.centroid': '무게중심',
-      'proc.threshold': '이상치 검정 문턱값',
 
       'view.bg': '배경',
       'bg.a': '입자영상 A',
@@ -2342,26 +2095,68 @@ textarea.dump {
       'ov.grid': '조사창 격자',
       'view.scale': '화살표 길이',
 
-      'stage.hint': '영상 위를 클릭하면 그 조사창의 계산 과정을 오른쪽에서 볼 수 있습니다.',
-      'stage.empty': '아직 계산하지 않았습니다. 위의 “PIV 계산 실행”을 누르세요.',
-      'stage.blink': 'A와 B를 번갈아 보여줍니다 — 입자가 흐르는 방향이 보입니다.',
-      'legend.speed': '속도 크기 (px/프레임)',
-      'legend.vort': '와도 (1/프레임)',
-      'legend.err': '오차 크기 (px)',
-      'legend.div': '발산 (1/프레임)',
-      'legend.ccw': '반시계',
-      'legend.cw': '시계',
-      'legend.measured': '측정 벡터',
-      'legend.truth': '참값',
-      'legend.rejected': '탈락(대체됨)',
+      /* 유도값 힌트 — 이 값을 바꾸면 무엇이 따라 변하는지 */
+      'h.disp': '창 {0} px 의 1/4 = {1} px 까지 · 여유 {2} px',
+      'h.disp.over': '창 {0} px 의 1/4 = {1} px 를 {2} px 넘습니다',
+      'h.seed': '지금 창 {0} px 에 {1}개 · 안정권 8개 이상',
+      'h.dp': '가우스 피팅 적정 2~3 px · 지금 {0} px',
+      'h.dp.small': '{0} px — 1.5 px 아래는 peak locking',
+      'h.noise': '8비트에서 ±{0} 카운트',
+      'h.loss': '짝 잃은 입자 {0}% · 상관 피크가 약 {1}배로',
+      'h.size': '{0}×{0} px · 벡터 {1}×{2}개',
+      'h.win': '벡터 간격 {0} px · 측정 한계 ±{1} px',
+      'h.overlap': '벡터 간격 {0} px · 벡터 {1}×{2}개',
+      'h.passes': '창 {0} px 로 좁혀 갑니다',
+      'h.subpix.gauss': '입자상이 가우스라 편향이 가장 작습니다',
+      'h.subpix.parabolic': '가우스보다 조금 무디지만 음수 값에서도 됩니다',
+      'h.subpix.centroid': '정수 픽셀에 달라붙습니다 — peak locking 을 보려면',
+      'h.thresh': '이웃 중앙값에서 {0}배 벗어나면 탈락',
+      'h.thresh.off': '검정을 끕니다 — 원시 벡터가 그대로 보입니다',
+      'h.scale': '최장 화살표 = 격자 간격의 {0}배',
+
+      /* 접힌 그룹이 말하는 자기 상태 */
+      'gs.flow': '{0} · Δx {1} px',
+      'gs.rec': 'N_I {0} · dτ {1} px · 손실 {2}%',
+      'gs.proc': '{0} px · 중첩 {1}% · {2}패스',
+      'gs.view': '{0}',
+      'gs.upload.synth': '합성 영상',
+      'gs.upload.user': '내 영상 {0}×{1} px',
+      'about.state': '합성 · 상관 · 검증',
+
+      /* 경고 — 한 번에 하나, 쓸 수 있는 값과 함께 */
+      'w.quarter.t': '변위가 창을 넘습니다',
+      'w.quarter.b': '변위 {0} px 가 창 {1} px 의 1/4({2} px)을 넘습니다. 상관 피크가 창 밖으로 나가 헛피크를 잡습니다.',
+      'w.quarter.f': 'Δx 를 {0} px 이하로 줄이거나 창을 {1} px 로 키우세요.',
+      'w.seed.t': '창당 입자가 모자랍니다',
+      'w.seed.b': '창 {0} px 안에 입자가 {1}개뿐입니다. 상관 피크가 잡음에 묻힙니다.',
+      'w.seed.f': 'N_I 를 8개 이상으로 올리거나 창을 {0} px 로 키우세요.',
+      'w.dp.t': '입자상이 너무 작습니다',
+      'w.dp.b': '지름 {0} px 에서는 부화소 보간이 정수 픽셀에 달라붙습니다(peak locking).',
+      'w.dp.f': 'dτ 를 2.0~3.0 px 로 두세요.',
+      'w.valid.t': '탈락 벡터가 많습니다',
+      'w.valid.b': '벡터의 {0}% 만 검정을 통과했습니다.',
+      'w.valid.f': '면외 손실({0}%)을 줄이거나 창을 {1} px 로 키우세요.',
+      'w.snr.t': '상관 신호가 약합니다',
+      'w.snr.b': '평균 피크 비가 {0} 입니다. 1.5 이상이면 안심입니다.',
+      'w.snr.f': '노이즈나 면외 손실을 줄이고 입자 수를 늘리세요.',
+
+      'panel.stats': '측정 요약',
+      'm.rms': 'RMS 오차',
+      'm.subpxv': '센서 픽셀의 1/{0}',
+      'm.peakcap': '평균 상관 피크',
+      'm.subpx': '부화소 정밀도',
+      'm.vectors': '벡터 수',
+      'm.valid': '유효 벡터',
+      'm.peak': '평균 피크 R',
+      'm.bias': '평균 편향',
+      'm.passes': '패스 구성',
+      'm.time': '계산 시간',
 
       'insp.title': '상관 현미경',
-      'insp.sub': '조사창 한 개에서 벌어지는 일',
-      'insp.pick': '왼쪽 영상을 클릭해 조사창을 고르세요.',
+      'insp.pick': '영상 위를 클릭하면 그 조사창의 창 A·창 B·상관면을 여기에 펼칩니다.',
       'insp.winA': '창 A — 시각 t',
       'insp.winB': '창 B — 시각 t+Δt',
       'insp.corr': '상관면 R(Δx, Δy)',
-      'insp.corr.hint': '두 창을 모든 방향으로 밀어보며 겹침 정도를 계산한 지도입니다. 가장 높은 곳이 곧 변위입니다.',
       'insp.mode2d': '평면',
       'insp.mode3d': '입체',
       'insp.measured': '측정 변위',
@@ -2378,90 +2173,67 @@ textarea.dump {
       'st.masked': '마스크 영역',
       'st.weak': '상관 신호 부족',
 
-      'm.rms': 'RMS 오차',
-      'm.rms.sub': '참값을 아는 합성 영상이므로 채점할 수 있습니다',
-      'm.rms.px': 'px',
-      'm.vectors': '벡터 수',
-      'm.valid': '유효 벡터',
-      'm.peak': '평균 상관 피크',
-      'm.time': '계산 시간',
-      'm.bias': '평균 편향',
-      'm.maxerr': '최대 오차',
-      'm.passes': '패스 구성',
-      'm.subpx': '부화소 정밀도',
-      'm.subpx.sub': '센서 픽셀 한 칸의',
+      'stage.empty': '아직 계산하지 않았습니다.',
+      'legend.measured': '측정',
+      'legend.truth': '참값',
+      'legend.rejected': '탈락(대체됨)',
+      'legend.scale': '= {0} px/프레임',
+      'lc.a': '시각 t 의 입자 영상 — 인쇄를 위해 밝기를 반전해 보여 줍니다',
+      'lc.blink': 'A 와 B 를 번갈아 — 입자가 어디로 가는지 눈으로 따라가 보세요',
+      'lc.pair': 'A 는 남색, B 는 황토색. 짝지은 두 점 사이가 곧 변위입니다',
+      'lc.speed': '창마다 구한 변위의 크기 (px/프레임)',
+      'lc.vort': '면외 와도 ω_z (1/프레임) · 파랑 시계방향, 빨강 반시계방향',
+      'lc.err': '측정값과 참값의 차이 (px)',
+      'lc.div': '면내 발산 (1/프레임) — 비압축 2차원이면 0 이어야 합니다',
+      'lc.floored': '· 범위는 자동 대신 ±{0} 로 잡았습니다 — 미분 잡음이 화면을 채우지 않게',
 
-      'diag.title': '측정 상태 점검',
-      'diag.seed': '창당 입자 수',
-      'diag.seed.ok': '상관 피크가 안정적입니다',
-      'diag.seed.warn': '입자가 적어 헛피크가 생깁니다',
-      'diag.quarter': '1/4 규칙 Δx ≤ 창/4',
-      'diag.quarter.ok': '변위가 창 안에 잘 들어옵니다',
-      'diag.quarter.warn': '변위가 창에 비해 큽니다 — 창을 키우거나 Δt를 줄이세요',
-      'diag.dp': '입자상 지름',
-      'diag.dp.ok': '부화소 피팅에 적당합니다',
-      'diag.dp.warn': '1.5 px 이하는 peak locking을 일으킵니다',
-      'diag.snr': '평균 피크 비',
-      'diag.snr.ok': '신호가 충분합니다',
-      'diag.snr.warn': '상관 신호가 약합니다 — 손실·노이즈를 줄이세요',
-      'diag.valid': '유효 벡터율',
-      'diag.valid.ok': '실험 데이터로 쓸 수 있는 수준입니다',
-      'diag.valid.warn': '탈락이 많습니다',
-
-      'upload.title': '내 영상으로 계산하기',
-      'upload.hint': '실제 PIV 영상 두 장(A, B)을 올리면 같은 엔진으로 계산합니다. 참값이 없으므로 오차 대신 상관 신호만 표시됩니다.',
+      'upload.title': '내 영상',
+      'upload.hint': '실제 PIV 영상 두 장을 올리면 같은 엔진으로 계산합니다. 참값이 없으므로 오차 대신 상관 신호만 나옵니다.',
       'upload.a': '영상 A',
       'upload.b': '영상 B',
       'upload.clear': '합성 영상으로 돌아가기',
-      'upload.size': '두 영상의 크기가 다릅니다. A의 크기에 맞춰 자릅니다.',
-      'copy.csv': '벡터장 CSV 복사',
-      'copy.done': '복사했습니다',
-      'copy.fail': '아래 내용을 직접 복사하세요',
+      'upload.size': 'B 를 A 크기에 맞춰 잘랐습니다',
 
-      'about.title': '이 시뮬레이터가 실제로 하는 계산',
-      'about.p1': '입자 영상은 가우스 강도 분포를 가진 입자들을 해석적 유동장에 따라 이동시켜 만듭니다. 8비트 양자화, 읽기 노이즈, 레이저 시트 두께에 따른 밝기 변화, 면외 손실까지 포함합니다.',
-      'about.p2': '계산은 FFT 기반 상호상관입니다. 창의 평균을 뺀 뒤 R = IFFT(conj(FFT(A))·FFT(B))로 상관면을 얻고, 피크 주변 3점에 가우스를 맞춰 부화소 변위를 구합니다. 다중 패스에서는 앞 패스의 결과만큼 두 창을 대칭으로 밀어 잔여 변위만 다시 찾습니다.',
-      'about.p3': '이상치는 보편 중앙값 검정(universal median test)으로 걸러내고 이웃 중앙값으로 대체합니다. 와도와 발산은 벡터 격자에서 중앙차분으로 계산합니다(경계는 한쪽 차분).',
-      'about.p4': '합성 영상의 변위는 해석적으로 알고 있으므로, 측정값과 참값의 차이가 곧 이 방법의 오차입니다. 잘 맞춘 조건에서 RMS 오차는 센서 픽셀의 1/20 수준까지 내려갑니다.',
-      'about.ref': '참고: Raffel et al., <i>Particle Image Velocimetry: A Practical Guide</i>; Westerweel &amp; Scarano, <i>Exp. Fluids</i> 39 (2005) 1096 — 보편 중앙값 검정.',
-      'about.limit': '한계: 단일 상관, 창 변형 없음, 2성분(2D2C)만. 실제 상용 PIV의 창 변형·가중·앙상블 상관은 넣지 않았습니다.'
+      'about.title': '이 도구가 하는 계산',
+      'about.p1': '입자 영상은 가우스 강도 분포를 가진 입자를 해석적 유동장을 따라 RK4 로 옮겨 만듭니다. 레이저 시트 두께에 따른 밝기 변화, 8비트 양자화, 읽기 노이즈, 면외 손실까지 넣었습니다.',
+      'about.p2': '계산은 FFT 상호상관입니다. 창의 평균을 뺀 뒤 R = IFFT(conj(FFT(A))·FFT(B)) 로 상관면을 얻고, 피크 주변 3점에 가우스를 맞춰 부화소 변위를 구합니다. 다중 패스에서는 앞 패스 결과만큼 두 창을 대칭으로 밀어 잔여 변위만 다시 찾습니다.',
+      'about.p3': '이상치는 보편 중앙값 검정으로 걸러 이웃 중앙값으로 대체합니다. 와도와 발산은 중앙차분으로 구하되 영상 경계와 물체 벽에서는 한쪽 차분을 씁니다. 물체에 20% 이상 걸친 창은 계산에서 뺍니다.',
+      'about.p4': '합성 영상의 변위는 해석적으로 알고 있으므로, 측정값과 참값의 차이가 곧 이 방법의 오차입니다. 잘 맞춘 조건에서 RMS 오차는 센서 픽셀의 1/20 까지 내려갑니다.',
+      'about.limit': '한계: 단일 상관, 창 변형 없음, 2성분(2D2C)만. 상용 PIV 의 창 변형·가중·앙상블 상관은 넣지 않았습니다. 와동 코어와 전단층에 남는 오차는 창이 그 안의 변위를 평균해 생기는 공간 분해능 오차입니다.',
+      'about.ref': '참고: Raffel et al., <i>Particle Image Velocimetry: A Practical Guide</i>; Westerweel &amp; Scarano, <i>Exp. Fluids</i> 39 (2005) 1096.'
     },
 
     en: {
       'doc.title': 'PIV Simulator',
-      'app.eyebrow': 'PARTICLE IMAGE VELOCIMETRY',
-      'app.title': 'Pulling a flow field out of two photographs',
-      'app.lede': 'Seed a liquid with tiny tracer particles, light one thin plane with a laser, and take two frames a few microseconds apart. Find how far each patch of particles moved, and you have the velocity field. Press the button and the computation runs for real.',
-      'app.langLabel': '한국어',
-      'app.themeLabel': 'Switch theme',
+      'app.title': 'PIV Simulator',
+      'app.tag': 'Particle image cross-correlation',
 
-      'step.1.n': 'Step 1',
-      'step.1.t': 'Seeding',
+      'step.1.t': '1 Seeding',
       'step.1.d': 'Tracer particles small enough to follow the flow, bright enough to photograph.',
-      'step.2.n': 'Step 2',
-      'step.2.t': 'Double exposure',
-      'step.2.d': 'A laser sheet lights one plane; the camera takes two frames separated by Δt.',
-      'step.3.n': 'Step 3',
-      'step.3.t': 'Cross-correlation',
-      'step.3.d': 'Cut both frames into small windows and slide each pair until the particles line up.',
-      'step.4.n': 'Step 4',
-      'step.4.t': 'Velocity field',
+      'step.2.t': '2 Double exposure',
+      'step.2.d': 'A laser sheet lights one plane and the camera takes two frames Δt apart. Blink A and B and you can see which way the particles go.',
+      'step.3.t': '3 Cross-correlation',
+      'step.3.d': 'Cut both frames into small windows and slide each pair until the particles line up. The peak on the right is where they do.',
+      'step.4.t': '4 Velocity field',
       'step.4.d': 'One vector per window. A few hundred of them, and the structure appears.',
 
       'run': 'Run the PIV computation',
       'run.again': 'Run again',
       'run.busy': 'Computing…',
       'reshoot': 'New exposure',
-      'reshoot.hint': 'Re-seed the flow and shoot a fresh pair',
+      'copy.csv': 'Copy CSV',
+      'copy.done': 'Vector field copied',
+      'copy.fail': 'Copy the text below',
 
       'group.flow': 'Flow',
       'group.record': 'Recording',
       'group.process': 'Processing',
       'group.view': 'View',
+      'rec.more': 'Set once',
+      'proc.more': 'Set once',
 
       'flow.kind': 'Flow field',
       'flow.disp': 'Particle displacement Δx',
-      'flow.disp.hint': 'Representative displacement between frames. It grows with Δt.',
       'grp.basic': 'Basic',
       'grp.shear': 'Shear flows',
       'grp.vortex': 'Vortices',
@@ -2476,25 +2248,32 @@ textarea.dump {
       'f.rotation': 'Solid-body rotation',
       'f.cylinder': 'Cylinder (potential flow)',
       'f.street': 'Kármán vortex street',
+      'fh.uniform': 'The same displacement everywhere — the cleanest look at sub-pixel accuracy',
+      'fh.channel': 'Parabolic profile: zero at the walls, peak in the middle',
+      'fh.shear': 'A tanh shear layer with a Kelvin–Helmholtz roll-up on top',
+      'fh.jet': 'A sech² profile spreading downstream',
+      'fh.stagnation': 'Flow striking a wall and splitting sideways',
+      'fh.vortex': 'The gradient is steepest in the core — a smaller window lowers the error',
+      'fh.vortexPair': 'Two opposite vortices induce a downwash between them',
+      'fh.rotation': 'Vorticity must come out as 2Ω everywhere',
+      'fh.cylinder': 'Potential flow, so vorticity should be zero. Nothing can be measured inside the body',
+      'fh.street': 'Shed vortices alternate sign down the wake',
 
       'rec.seed': 'Particles per window N_I',
-      'rec.seed.hint': 'Count inside one 32×32 window. Eight or more keeps the correlation peak steady.',
       'rec.dp': 'Particle image diameter dτ',
-      'rec.dp.hint': '2–3 px is the sweet spot. Smaller, and the sub-pixel fit locks onto whole pixels.',
       'rec.noise': 'Sensor noise',
       'rec.loss': 'Out-of-plane loss',
-      'rec.loss.hint': 'Fraction of particles that leave the light sheet and lose their partner.',
       'rec.size': 'Image size',
+      'unit.count': '',
       'proc.win': 'Interrogation window',
-      'proc.win.hint': 'Everything inside one window is reduced to a single displacement vector.',
       'proc.overlap': 'Window overlap',
       'proc.passes': 'Passes',
-      'proc.passes.hint': 'A coarse pass finds the rough shift; finer passes offset the windows by it and measure only what is left.',
       'proc.subpixel': 'Sub-pixel fit',
+      'proc.threshold': 'Outlier test threshold',
+      'proc.threshold.off': 'off',
       'sp.gauss': 'Gaussian, 3-point',
       'sp.parabolic': 'Parabolic, 3-point',
       'sp.centroid': 'Centroid',
-      'proc.threshold': 'Outlier test threshold',
 
       'view.bg': 'Background',
       'bg.a': 'Particle image A',
@@ -2505,32 +2284,71 @@ textarea.dump {
       'bg.err': 'Error magnitude',
       'bg.div': 'Divergence (should be 0)',
       'view.overlay': 'Overlays',
-      'ov.vectors': 'Measured vectors',
+      'ov.vectors': 'Measured',
       'ov.truth': 'Exact answer',
       'ov.error': 'Error ×10',
       'ov.grid': 'Window grid',
       'view.scale': 'Arrow length',
 
-      'stage.hint': 'Click anywhere on the image to open that interrogation window on the right.',
-      'stage.empty': 'Nothing computed yet — press “Run the PIV computation” above.',
-      'stage.blink': 'Frames A and B alternating — you can see which way the particles go.',
-      'legend.speed': 'Speed (px/frame)',
-      'legend.vort': 'Vorticity (1/frame)',
-      'legend.err': 'Error magnitude (px)',
-      'legend.div': 'Divergence (1/frame)',
-      'legend.ccw': 'counter-clockwise',
-      'legend.cw': 'clockwise',
-      'legend.measured': 'measured',
-      'legend.truth': 'exact',
-      'legend.rejected': 'rejected (replaced)',
+      'h.disp': 'a quarter of the {0} px window is {1} px · {2} px of margin',
+      'h.disp.over': '{2} px past the quarter of the {0} px window ({1} px)',
+      'h.seed': '{1} in the {0} px window now · 8 or more is safe',
+      'h.dp': '2–3 px suits the Gaussian fit · now {0} px',
+      'h.dp.small': '{0} px — below 1.5 px the fit locks onto whole pixels',
+      'h.noise': '±{0} counts at 8 bits',
+      'h.loss': '{0}% of pairs lost · peak drops to about {1}×',
+      'h.size': '{0}×{0} px · {1}×{2} vectors',
+      'h.win': '{0} px vector spacing · measurable up to ±{1} px',
+      'h.overlap': '{0} px vector spacing · {1}×{2} vectors',
+      'h.passes': 'windows narrow to {0} px',
+      'h.subpix.gauss': 'Particle images are Gaussian, so this biases least',
+      'h.subpix.parabolic': 'A little blunter, but works on negative values too',
+      'h.subpix.centroid': 'Locks onto whole pixels — pick it to see peak locking',
+      'h.thresh': 'rejected past {0}× the neighbour median residual',
+      'h.thresh.off': 'test off — raw vectors shown as measured',
+      'h.scale': 'longest arrow = {0}× the vector spacing',
+
+      'gs.flow': '{0} · Δx {1} px',
+      'gs.rec': 'N_I {0} · dτ {1} px · loss {2}%',
+      'gs.proc': '{0} px · {1}% overlap · {2} passes',
+      'gs.view': '{0}',
+      'gs.upload.synth': 'synthetic',
+      'gs.upload.user': 'my pair {0}×{1} px',
+      'about.state': 'synthesis · correlation · validation',
+
+      'w.quarter.t': 'Displacement outgrows the window',
+      'w.quarter.b': '{0} px is past a quarter of the {1} px window ({2} px). The peak leaves the plane and a spurious one wins.',
+      'w.quarter.f': 'Bring Δx down to {0} px, or widen the window to {1} px.',
+      'w.seed.t': 'Too few particles per window',
+      'w.seed.b': 'Only {1} particles sit in the {0} px window. The peak drowns in noise.',
+      'w.seed.f': 'Raise N_I to 8 or more, or widen the window to {0} px.',
+      'w.dp.t': 'Particle images are too small',
+      'w.dp.b': 'At {0} px across, the sub-pixel fit locks onto whole pixels (peak locking).',
+      'w.dp.f': 'Keep dτ between 2.0 and 3.0 px.',
+      'w.valid.t': 'Too many vectors rejected',
+      'w.valid.b': 'Only {0}% of the vectors passed the test.',
+      'w.valid.f': 'Reduce the out-of-plane loss ({0}%) or widen the window to {1} px.',
+      'w.snr.t': 'Weak correlation signal',
+      'w.snr.b': 'The mean peak ratio is {0}. Above 1.5 is comfortable.',
+      'w.snr.f': 'Lower the noise or the loss, and add particles.',
+
+      'panel.stats': 'Measurement',
+      'm.rms': 'RMS error',
+      'm.subpxv': '1/{0} of a pixel',
+      'm.peakcap': 'Mean peak R',
+      'm.subpx': 'Sub-pixel resolution',
+      'm.vectors': 'Vectors',
+      'm.valid': 'Valid',
+      'm.peak': 'Mean peak R',
+      'm.bias': 'Mean bias',
+      'm.passes': 'Pass schedule',
+      'm.time': 'Compute time',
 
       'insp.title': 'Correlation microscope',
-      'insp.sub': 'What happens inside one window',
-      'insp.pick': 'Click the image on the left to pick a window.',
+      'insp.pick': 'Click the image to open that window here: window A, window B, and the correlation plane.',
       'insp.winA': 'Window A — time t',
       'insp.winB': 'Window B — time t+Δt',
       'insp.corr': 'Correlation plane R(Δx, Δy)',
-      'insp.corr.hint': 'How well the two windows overlap at every possible shift. The highest point is the displacement.',
       'insp.mode2d': 'Plane',
       'insp.mode3d': 'Surface',
       'insp.measured': 'Measured',
@@ -2547,53 +2365,34 @@ textarea.dump {
       'st.masked': 'masked region',
       'st.weak': 'weak correlation',
 
-      'm.rms': 'RMS error',
-      'm.rms.sub': 'The synthetic pair has an exact answer, so the result can be graded',
-      'm.rms.px': 'px',
-      'm.vectors': 'Vectors',
-      'm.valid': 'Valid',
-      'm.peak': 'Mean peak R',
-      'm.time': 'Compute time',
-      'm.bias': 'Mean bias',
-      'm.maxerr': 'Worst error',
-      'm.passes': 'Pass schedule',
-      'm.subpx': 'Sub-pixel resolution',
-      'm.subpx.sub': 'of one sensor pixel',
+      'stage.empty': 'Nothing computed yet.',
+      'legend.measured': 'measured',
+      'legend.truth': 'exact',
+      'legend.rejected': 'rejected (replaced)',
+      'legend.scale': '= {0} px/frame',
+      'lc.a': 'Particle image at time t — shown inverted, the way it would be printed',
+      'lc.blink': 'A and B alternating — follow a particle and you can see where it goes',
+      'lc.pair': 'A in navy, B in ochre. The gap between a pair is the displacement',
+      'lc.speed': 'Magnitude of the displacement found in each window (px/frame)',
+      'lc.vort': 'In-plane vorticity ω_z (1/frame) · blue clockwise, red counter-clockwise',
+      'lc.err': 'Difference between measurement and the exact answer (px)',
+      'lc.div': 'In-plane divergence (1/frame) — zero for incompressible 2D flow',
+      'lc.floored': '· range held at ±{0} rather than auto, so differentiation noise cannot fill the map',
 
-      'diag.title': 'Measurement health',
-      'diag.seed': 'Particles per window',
-      'diag.seed.ok': 'the correlation peak is well fed',
-      'diag.seed.warn': 'too few particles — spurious peaks appear',
-      'diag.quarter': 'Quarter rule Δx ≤ win/4',
-      'diag.quarter.ok': 'the displacement stays inside the window',
-      'diag.quarter.warn': 'displacement too large — widen the window or shorten Δt',
-      'diag.dp': 'Particle image diameter',
-      'diag.dp.ok': 'good for sub-pixel fitting',
-      'diag.dp.warn': 'below 1.5 px the fit locks onto whole pixels',
-      'diag.snr': 'Mean peak ratio',
-      'diag.snr.ok': 'signal is strong',
-      'diag.snr.warn': 'weak correlation — reduce loss or noise',
-      'diag.valid': 'Valid vectors',
-      'diag.valid.ok': 'good enough to use as data',
-      'diag.valid.warn': 'too many rejected vectors',
-
-      'upload.title': 'Use your own images',
-      'upload.hint': 'Load a real PIV pair and the same engine processes it. There is no exact answer to compare against, so only the correlation numbers are shown.',
+      'upload.title': 'My images',
+      'upload.hint': 'Load a real PIV pair and the same engine processes it. There is no exact answer to compare against, so only the correlation numbers appear.',
       'upload.a': 'Image A',
       'upload.b': 'Image B',
       'upload.clear': 'Back to synthetic images',
-      'upload.size': 'The two images differ in size; B is cropped to match A.',
-      'copy.csv': 'Copy vector field as CSV',
-      'copy.done': 'Copied',
-      'copy.fail': 'Copy the text below',
+      'upload.size': 'B was cropped to match A',
 
-      'about.title': 'What this simulator actually computes',
-      'about.p1': 'The particle images are built by advecting Gaussian particle images through an analytic flow field, with 8-bit quantisation, read noise, a Gaussian light-sheet intensity profile, and loss of pairs out of the plane.',
+      'about.title': 'What this tool computes',
+      'about.p1': 'The particle images are built by advecting Gaussian particle images through an analytic flow field with RK4, including the light-sheet intensity profile, 8-bit quantisation, read noise and loss of pairs out of the plane.',
       'about.p2': 'Processing is FFT cross-correlation: each window is mean-subtracted, R = IFFT(conj(FFT(A))·FFT(B)) gives the correlation plane, and a Gaussian through the three points around the peak gives the sub-pixel displacement. In a multi-pass run both windows are shifted symmetrically by the previous estimate, so only the residual is measured.',
-      'about.p3': 'Outliers are caught with the universal median test and replaced by the median of their neighbours. Vorticity and divergence come from central differences on the vector grid, one-sided along the borders.',
+      'about.p3': 'Outliers are caught with the universal median test and replaced by the median of their neighbours. Vorticity and divergence use central differences, one-sided along image borders and body walls. A window more than a fifth inside a body is dropped.',
       'about.p4': 'Because the synthetic displacement field is known analytically, the difference between measurement and truth is the real error of the method. Well set up, the RMS error drops to about a twentieth of a sensor pixel.',
-      'about.ref': 'References: Raffel et al., <i>Particle Image Velocimetry: A Practical Guide</i>; Westerweel &amp; Scarano, <i>Exp. Fluids</i> 39 (2005) 1096 for the universal median test.',
-      'about.limit': 'Limits: single correlation, no window deformation, two components only (2D2C). The window deformation, weighting and ensemble correlation of commercial PIV codes are not included.'
+      'about.limit': 'Limits: single correlation, no window deformation, two components only (2D2C). The window deformation, weighting and ensemble correlation of commercial codes are not included. The error left in vortex cores and shear layers is spatial-resolution error: the window averages the displacement it contains.',
+      'about.ref': 'References: Raffel et al., <i>Particle Image Velocimetry: A Practical Guide</i>; Westerweel &amp; Scarano, <i>Exp. Fluids</i> 39 (2005) 1096.'
     }
   };
 
@@ -2603,6 +2402,14 @@ textarea.dump {
     var s = D[lang] && D[lang][key];
     if (s === undefined) s = D.ko[key];
     return s === undefined ? key : s;
+  }
+
+  /* 값이 들어가는 문구 — tf('h.win', 16, 8) */
+  function tf(key) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    return t(key).replace(/\{(\d+)\}/g, function (m, i) {
+      return args[+i] === undefined ? m : args[+i];
+    });
   }
 
   function apply(next, scope) {
@@ -2618,78 +2425,94 @@ textarea.dump {
     for (i = 0; i < nodes.length; i++) {
       nodes[i].setAttribute('title', t(nodes[i].getAttribute('data-i18n-title')));
     }
-    nodes = r.querySelectorAll('[data-i18n-aria]');
-    for (i = 0; i < nodes.length; i++) {
-      nodes[i].setAttribute('aria-label', t(nodes[i].getAttribute('data-i18n-aria')));
-    }
     if (document.documentElement) document.documentElement.lang = lang;
     return lang;
   }
 
   root.PIVSim = root.PIVSim || {};
   root.PIVSim.I18N = {
-    dict: D, t: t, apply: apply,
+    dict: D, t: t, tf: tf, apply: apply,
     get lang() { return lang; },
     set lang(v) { apply(v); }
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 
 /* ===== js/app.js ===== */
-/* PIV Simulator — UI controller.
- * Owns the state, drives synthesis -> correlation -> drawing, and keeps the
- * inspector, the metrics and the diagnostics in step with each other.
+/* PIV Simulator — 상태와 배선.
+ * 합성 → 상관 → 그리기를 잇고, 상관 현미경·측정 요약·경고를 한 상태에서 맞춘다.
+ * 디자인 지침: 파라미터는 슬라이더+숫자칸+유도값 힌트 세 짝, 접힌 그룹은 자기
+ * 상태를 말하고, 경고는 값 옆에서 즉시 뜨되 한 번에 하나만 띄운다.
  */
 (function (root) {
   'use strict';
 
   var Flow = root.PIVSim.Flow, Synth = root.PIVSim.Synth, PIV = root.PIVSim.PIV;
   var R = root.PIVSim.Render, Color = root.PIVSim.Color, I18N = root.PIVSim.I18N;
-
+  var t = function (k) { return I18N.t(k); };
+  var tf = function () { return I18N.tf.apply(I18N, arguments); };
   var $ = function (id) { return document.getElementById(id); };
 
   var S = {
-    themeMode: 'auto', theme: 'light',
     size: 384, field: 'cylinder', disp: 6,
     seed: 14, dp: 2.6, noise: 1.5, loss: 5,
     win: 32, overlap: 0.5, passes: 3, subpix: 'gauss', thresh: 2,
-    bg: 'a', arrow: 1, step: 0,
+    bg: 'a', scale: 1, step: 0,
     ov: { vectors: true, truth: false, error: false, grid: false },
-    corrMode: '3d',
-    rngSeed: 7,
-    flow: null, img: null, res: null, truth: null, der: null,
+    corrMode: '3d', rngSeed: 7,
+    flow: null, img: null, res: null, truth: null, der: null, cfg: null,
     uploaded: null, pendingA: null, pendingB: null,
-    picked: -1, insp: null,
-    busy: false
+    picked: -1, insp: null, busy: false, range: [0, 1]
   };
 
+  /* 숫자칸과 슬라이더가 한 벌로 움직이는 파라미터 */
+  var NUMS = [
+    { key: 'disp', range: 'dispRange', num: 'dispNum', dec: 1, act: 'shoot' },
+    { key: 'seed', range: 'seedRange', num: 'seedNum', dec: 0, act: 'shoot' },
+    { key: 'dp', range: 'dpRange', num: 'dpNum', dec: 1, act: 'shoot' },
+    { key: 'loss', range: 'lossRange', num: 'lossNum', dec: 0, act: 'shoot' },
+    { key: 'noise', range: 'noiseRange', num: 'noiseNum', dec: 1, act: 'shoot' },
+    { key: 'scale', range: 'scaleRange', num: 'scaleNum', dec: 1, act: 'draw' }
+  ];
+  var PICKS = [
+    { key: 'field', id: 'flowKind', act: 'shoot', str: true },
+    { key: 'size', id: 'sizeSelect', act: 'shoot' },
+    { key: 'win', id: 'winSelect', act: 'run' },
+    { key: 'overlap', id: 'overlapSelect', act: 'run' },
+    { key: 'passes', id: 'passesSelect', act: 'run' },
+    { key: 'subpix', id: 'subpixSelect', act: 'run', str: true },
+    { key: 'thresh', id: 'threshSelect', act: 'run' },
+    { key: 'bg', id: 'bgSelect', act: 'draw', str: true }
+  ];
+
   var stage = $('stage'), ctx = stage.getContext('2d');
-  var bgCanvas = R.offscreen(8, 8), fgCanvas = R.offscreen(8, 8);
-  var bgKey = '', reveal = { n: 0, target: 0, raf: 0, t0: 0 };
+  var bgCanvas = R.offscreen(8, 8), bgKey = '';
+  var reveal = { n: 0, target: 0, raf: 0, t0: 0 };
   var blink = { raf: 0, on: false, phase: 0 };
+  var pending = 0;
 
-  /* ---------- storage (per-viewer convenience only) --------------------- */
-  function store(k, v) {
-    try { if (v === undefined) return localStorage.getItem('piv.' + k); localStorage.setItem('piv.' + k, v); }
-    catch (e) { return null; }
-  }
-
-  /* ---------- theme ------------------------------------------------------ */
-  function resolveTheme() {
-    if (S.themeMode === 'auto') {
-      var m = root.matchMedia && root.matchMedia('(prefers-color-scheme: dark)');
-      S.theme = m && m.matches ? 'dark' : 'light';
-      document.documentElement.removeAttribute('data-theme');
-    } else {
-      S.theme = S.themeMode;
-      document.documentElement.setAttribute('data-theme', S.theme);
-    }
-  }
-
+  function fmt(v, n) { return Number(v).toFixed(n === undefined ? 2 : n); }
   function cssVar(name) {
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   }
 
-  /* ---------- controls --------------------------------------------------- */
+  /* ---------- 격자 산수 (계산 전에도 힌트를 띄우려면 필요하다) ---------- */
+
+  function gridCount() {
+    var W = S.uploaded ? S.uploaded.w : S.size;
+    var H = S.uploaded ? S.uploaded.h : S.size;
+    var step = Math.max(1, Math.round(S.win * (1 - S.overlap)));
+    return {
+      step: step,
+      nx: Math.max(1, Math.floor((W - S.win) / step) + 1),
+      ny: Math.max(1, Math.floor((H - S.win) / step) + 1),
+      W: W, H: H
+    };
+  }
+  function seedInWindow() { return S.seed * Math.pow(S.win / 32, 2); }
+  function nextWin() { return S.win < 64 ? S.win * 2 : 64; }
+
+  /* ---------- 컨트롤 ---------- */
+
   function buildFlowSelect() {
     var sel = $('flowKind'), groups = {}, order = [];
     sel.innerHTML = '';
@@ -2699,11 +2522,11 @@ textarea.dump {
     });
     order.forEach(function (g) {
       var og = document.createElement('optgroup');
-      og.label = I18N.t('grp.' + g);
+      og.label = t('grp.' + g);
       groups[g].forEach(function (f) {
         var o = document.createElement('option');
         o.value = f.id;
-        o.textContent = I18N.t('f.' + f.id);
+        o.textContent = t('f.' + f.id);
         og.appendChild(o);
       });
       sel.appendChild(og);
@@ -2711,58 +2534,126 @@ textarea.dump {
     sel.value = S.field;
   }
 
-  function fmt(v, n) { return v.toFixed(n === undefined ? 2 : n); }
-
-  function syncLabels() {
-    $('dispVal').textContent = fmt(S.disp, 1) + ' px';
-    $('seedVal').textContent = S.seed + (I18N.lang === 'ko' ? ' 개' : '');
-    $('dpVal').textContent = fmt(S.dp, 1) + ' px';
-    $('noiseVal').textContent = fmt(S.noise, 1) + ' %';
-    $('lossVal').textContent = S.loss + ' %';
-    $('scaleVal').textContent = '× ' + fmt(S.arrow, 1);
-  }
-
-  function readControls() {
-    S.field = $('flowKind').value || S.field;
-    S.disp = +$('dispRange').value;
-    S.seed = +$('seedRange').value;
-    S.dp = +$('dpRange').value;
-    S.noise = +$('noiseRange').value;
-    S.loss = +$('lossRange').value;
-    S.size = +$('sizeSelect').value;
-    S.win = +$('winSelect').value;
-    S.overlap = +$('overlapSelect').value;
-    S.passes = +$('passesSelect').value;
-    S.subpix = $('subpixSelect').value;
-    S.thresh = +$('threshSelect').value;
-    S.bg = $('bgSelect').value;
-    S.arrow = +$('scaleRange').value;
-    S.ov.vectors = $('ovVectors').checked;
-    S.ov.truth = $('ovTruth').checked;
-    S.ov.error = $('ovError').checked;
-    S.ov.grid = $('ovGrid').checked;
-    syncLabels();
-  }
-
-  /* ---------- pipeline --------------------------------------------------- */
-
-  function shoot() {
-    if (S.uploaded) {
-      S.flow = null;
-      S.img = { a: S.uploaded.a, b: S.uploaded.b, width: S.uploaded.w, height: S.uploaded.h };
-      return;
-    }
-    S.flow = Flow.bind(S.field, S.size, S.size, S.disp);
-    S.img = Synth.generate({
-      width: S.size, height: S.size, flow: S.flow, maxDisp: S.disp,
-      nPerWindow: S.seed, dp: S.dp, noise: S.noise, loss: S.loss / 100,
-      seed: S.rngSeed
+  function pushControls() {
+    NUMS.forEach(function (p) {
+      $(p.range).value = S[p.key];
+      $(p.num).value = fmt(S[p.key], p.dec);
     });
+    PICKS.forEach(function (p) { $(p.id).value = S[p.key]; });
+    $('ovVectors').checked = S.ov.vectors;
+    $('ovTruth').checked = S.ov.truth;
+    $('ovError').checked = S.ov.error;
+    $('ovGrid').checked = S.ov.grid;
   }
 
-  /* A window that straddles a body wall only holds particles on one side, so
-   * its correlation is meaningless. Real PIV masks those out too: reject a
-   * window when a fifth of it falls inside the body. */
+  function setHint(id, text, level) {
+    var el = $(id);
+    el.textContent = text;
+    el.className = 'hint' + (level ? ' ' + level : '');
+  }
+
+  /* 유도값 힌트 — 이 값을 바꾸면 무엇이 따라 변하는지 즉시 보여 준다 */
+  function updateHints() {
+    var g = gridCount(), quarter = S.win / 4;
+
+    setHint('flowHint', t('fh.' + S.field));
+
+    if (S.disp <= quarter) {
+      setHint('dispHint', tf('h.disp', S.win, fmt(quarter, 1), fmt(quarter - S.disp, 1)));
+    } else {
+      setHint('dispHint', tf('h.disp.over', S.win, fmt(quarter, 1), fmt(S.disp - quarter, 1)),
+        S.disp > quarter * 1.4 ? 'bad' : 'warn');
+    }
+
+    var nI = seedInWindow();
+    setHint('seedHint', tf('h.seed', S.win, fmt(nI, 1)), nI < 4 ? 'bad' : (nI < 8 ? 'warn' : ''));
+    setHint('dpHint', S.dp >= 1.5 ? tf('h.dp', fmt(S.dp, 1)) : tf('h.dp.small', fmt(S.dp, 1)),
+      S.dp < 1.5 ? 'warn' : '');
+    setHint('noiseHint', tf('h.noise', fmt(S.noise * 2.55, 1)));
+    setHint('lossHint', tf('h.loss', fmt(S.loss, 0), fmt(1 - S.loss / 100, 2)));
+    setHint('sizeHint', tf('h.size', S.size, g.nx, g.ny));
+    setHint('winHint', tf('h.win', g.step, fmt(quarter, 1)));
+    setHint('overlapHint', tf('h.overlap', g.step, g.nx, g.ny));
+    setHint('passesHint', tf('h.passes',
+      PIV.schedule(g.W, g.H, S.win, S.passes).join(' → ')));
+    setHint('subpixHint', t('h.subpix.' + S.subpix));
+    setHint('threshHint', S.thresh > 100 ? t('h.thresh.off') : tf('h.thresh', fmt(S.thresh, 1)),
+      S.thresh > 100 ? 'warn' : '');
+    setHint('scaleHint', tf('h.scale', fmt(S.scale, 1)));
+  }
+
+  /* 접힌 그룹이 말하는 자기 상태 */
+  function updateStates() {
+    $('gsFlow').textContent = tf('gs.flow', t('f.' + S.field), fmt(S.disp, 1));
+    $('gsRec').textContent = tf('gs.rec', S.seed, fmt(S.dp, 1), S.loss);
+    $('gsProc').textContent = tf('gs.proc', S.win, Math.round(S.overlap * 100), S.passes);
+    $('gsView').textContent = tf('gs.view', t('bg.' + S.bg));
+    $('gsUpload').textContent = S.uploaded
+      ? tf('gs.upload.user', S.uploaded.w, S.uploaded.h)
+      : t('gs.upload.synth');
+  }
+
+  /* ---------- 경고 사슬 — 심각한 것 하나만 ---------- */
+
+  function updateWarn() {
+    var g = gridCount(), quarter = S.win / 4, cand = [];
+    var p98 = S.truth ? percentileSpeed(0.98) : (S.res ? percentileSpeed(0.98) : S.disp);
+
+    if (p98 > quarter) {
+      cand.push({
+        level: p98 > quarter * 1.4 ? 'bad' : 'caution',
+        t: t('w.quarter.t'),
+        b: tf('w.quarter.b', fmt(p98, 1), S.win, fmt(quarter, 1)),
+        f: tf('w.quarter.f', fmt(quarter, 1), nextWin())
+      });
+    }
+    var nI = seedInWindow();
+    if (!S.uploaded && nI < 8) {
+      cand.push({
+        level: nI < 4 ? 'bad' : 'caution',
+        t: t('w.seed.t'),
+        b: tf('w.seed.b', S.win, fmt(nI, 1)),
+        f: tf('w.seed.f', nextWin())
+      });
+    }
+    if (S.res) {
+      var m = summary();
+      if (m.validPct < 95) {
+        cand.push({
+          level: m.validPct < 85 ? 'bad' : 'caution',
+          t: t('w.valid.t'),
+          b: tf('w.valid.b', fmt(m.validPct, 1)),
+          f: tf('w.valid.f', S.loss, nextWin())
+        });
+      }
+      if (m.meanSnr < 1.5) {
+        cand.push({
+          level: m.meanSnr < 1.2 ? 'bad' : 'caution',
+          t: t('w.snr.t'),
+          b: tf('w.snr.b', fmt(m.meanSnr, 2)),
+          f: t('w.snr.f')
+        });
+      }
+    }
+    if (!S.uploaded && (S.dp < 1.5 || S.dp > 4)) {
+      cand.push({
+        level: 'caution', t: t('w.dp.t'),
+        b: tf('w.dp.b', fmt(S.dp, 1)), f: t('w.dp.f')
+      });
+    }
+
+    var box = $('pWarn');
+    if (!cand.length) { box.hidden = true; return; }
+    var pick = cand.filter(function (c) { return c.level === 'bad'; })[0] || cand[0];
+    box.hidden = false;
+    box.setAttribute('data-level', pick.level);
+    $('warnTitle').textContent = pick.t;
+    $('warnBody').textContent = pick.b;
+    $('warnFix').textContent = pick.f;
+  }
+
+  /* ---------- 파이프라인 ---------- */
+
   function maskedWindow(win) {
     if (!S.flow || !S.flow.def.mask) return null;
     var m = S.flow.masked, n = 5, h = win / 2;
@@ -2774,27 +2665,40 @@ textarea.dump {
           if (m(cx - h + (i + 0.5) * win / n, cy - h + (j + 0.5) * win / n)) hit++;
         }
       }
-      return hit >= n * n * 0.2;
+      return hit >= n * n * 0.2;    /* 창이 물체에 1/5 이상 걸치면 못 쓴다 */
     };
   }
 
+  function shoot() {
+    if (S.uploaded) {
+      S.flow = null;
+      S.img = { a: S.uploaded.a, b: S.uploaded.b, width: S.uploaded.w, height: S.uploaded.h };
+      return;
+    }
+    S.flow = Flow.bind(S.field, S.size, S.size, S.disp);
+    S.img = Synth.generate({
+      width: S.size, height: S.size, flow: S.flow, maxDisp: S.disp,
+      nPerWindow: S.seed, dp: S.dp, noise: S.noise, loss: S.loss / 100, seed: S.rngSeed
+    });
+  }
+
   function compute(animate) {
-    var cfg = {
+    S.cfg = {
       imgA: S.img.a, imgB: S.img.b, width: S.img.width, height: S.img.height,
-      win: S.win, overlap: S.overlap, passes: S.passes, subpix: S.subpix,
+      win: S.win, overlap: S.overlap, passes: S.passes,
       subpixel: S.subpix, threshold: S.thresh, snrMin: 1.2,
       masked: maskedWindow(S.win)
     };
-    S.cfg = cfg;
-    S.res = PIV.run(cfg);
+    S.res = PIV.run(S.cfg);
     S.der = PIV.derive(S.res);
     S.truth = S.flow ? PIV.truth(S.res, S.flow) : null;
+    S.speedRange = null;
     bgKey = '';
     if (S.picked >= S.res.nx * S.res.ny) S.picked = -1;
-    updateMetrics();
+    updateStats();
+    updateWarn();
     if (animate) startReveal(); else { reveal.n = S.res.nx * S.res.ny; draw(); }
-    if (S.picked < 0) autoPick();
-    else inspect(S.picked);
+    if (S.picked < 0) autoPick(); else inspect(S.picked);
   }
 
   function run(animate) {
@@ -2802,44 +2706,52 @@ textarea.dump {
     S.busy = true;
     var btn = $('runBtn');
     btn.disabled = true;
-    btn.textContent = I18N.t('run.busy');
-    veil(I18N.t('run.busy'));
-    /* let the veil paint before the synchronous correlation pass */
+    btn.textContent = t('run.busy');
+    veil(t('run.busy'));
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
         try {
-          readControls();
           shoot();
           compute(animate !== false);
         } finally {
           S.busy = false;
           btn.disabled = false;
-          btn.textContent = I18N.t('run.again');
+          btn.textContent = t('run.again');
           veil(null);
         }
       });
     });
   }
 
-  function veil(text) {
-    var v = $('veil');
-    if (text) { v.firstElementChild ? (v.firstElementChild.textContent = text) : (v.textContent = text); v.hidden = false; }
-    else v.hidden = true;
+  /* 슬라이더를 끄는 동안 계산이 따라오지 않게 잠깐 모은다.
+   * 힌트와 상태는 즉시 갱신하므로 반응은 느려지지 않는다. */
+  function schedule(act) {
+    clearTimeout(pending);
+    pending = setTimeout(function () {
+      if (act === 'shoot') run(false);
+      else if (act === 'run') { compute(false); }
+      else { bgKey = ''; draw(); }
+    }, act === 'draw' ? 0 : 130);
   }
 
-  /* ---------- reveal animation ------------------------------------------ */
+  function veil(text) {
+    var v = $('veil');
+    if (text) {
+      if (v.firstElementChild) v.firstElementChild.textContent = text;
+      v.hidden = false;
+    } else v.hidden = true;
+  }
+
   function startReveal() {
     var n = S.res.nx * S.res.ny;
     reveal.target = n; reveal.n = 0; reveal.t0 = 0;
     cancelAnimationFrame(reveal.raf);
     var reduce = root.matchMedia && root.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (reduce) { reveal.n = n; draw(); $('progress').style.width = '0'; return; }
-    var dur = 850;
-    function frame(t) {
-      if (!reveal.t0) reveal.t0 = t;
-      var p = Math.min(1, (t - reveal.t0) / dur);
-      var e = 1 - Math.pow(1 - p, 3);
-      reveal.n = Math.round(e * n);
+    function frame(ts) {
+      if (!reveal.t0) reveal.t0 = ts;
+      var p = Math.min(1, (ts - reveal.t0) / 850);
+      reveal.n = Math.round((1 - Math.pow(1 - p, 3)) * n);
       $('progress').style.width = (p < 1 ? (100 * p).toFixed(1) : 0) + '%';
       draw();
       if (p < 1) reveal.raf = requestAnimationFrame(frame);
@@ -2847,174 +2759,195 @@ textarea.dump {
     reveal.raf = requestAnimationFrame(frame);
   }
 
-  /* ---------- drawing ---------------------------------------------------- */
+  /* ---------- 그리기 ---------- */
 
   function fitCanvas() {
-    if (!S.img) return;
-    var W = S.img.width, H = S.img.height;
-    var cssW = $('sensor').clientWidth || 600;
+    if (!S.img) return 1;
+    var wrap = $('stageWrap');
+    var availW = Math.max(120, wrap.clientWidth - 28);
+    var availH = Math.max(120, wrap.clientHeight - 28);
+    var ar = S.img.width / S.img.height;
+    var w = availW, h = w / ar;
+    if (h > availH) { h = availH; w = h * ar; }
     var dpr = Math.min(2, root.devicePixelRatio || 1);
-    var bw = Math.max(320, Math.round(cssW * dpr));
-    if (stage.width !== bw || stage.height !== Math.round(bw * H / W)) {
-      stage.width = bw;
-      stage.height = Math.round(bw * H / W);
-    }
+    stage.style.width = Math.round(w) + 'px';
+    stage.style.height = Math.round(h) + 'px';
+    var bw = Math.round(w * dpr), bh = Math.round(h * dpr);
+    if (stage.width !== bw || stage.height !== bh) { stage.width = bw; stage.height = bh; }
+    return w;
   }
 
   function bgSpec() {
     var m = S.bg;
-    if (m === 'speed') return { arr: S.der.mag, ramp: 'speed', sym: false, label: 'legend.speed' };
-    if (m === 'vort') return { arr: S.der.vort, ramp: 'vorticity', sym: true, label: 'legend.vort' };
-    if (m === 'div') return { arr: S.der.div, ramp: 'vorticity', sym: true, label: 'legend.div' };
-    if (m === 'err' && S.truth) return { arr: S.truth.err, ramp: 'error', sym: false, label: 'legend.err' };
+    if (!S.der) return null;
+    if (m === 'speed') return { arr: S.der.mag, ramp: 'field', sym: false };
+    if (m === 'vort') return { arr: S.der.vort, ramp: 'diverging', sym: true };
+    if (m === 'div') return { arr: S.der.div, ramp: 'diverging', sym: true };
+    if (m === 'err' && S.truth) return { arr: S.truth.err, ramp: 'field', sym: false };
     return null;
   }
 
   function buildBackground() {
     var W = S.img.width, H = S.img.height;
     var spec = bgSpec();
-    var key = [S.bg, S.theme, W, H, S.res ? S.res.ms : 0, blink.phase].join('|');
+    var key = [S.bg, W, H, S.res ? S.res.ms : 0, blink.phase].join('|');
     if (key === bgKey) return;
     bgKey = key;
-    if (bgCanvas.width !== W || bgCanvas.height !== H) {
-      bgCanvas.width = W; bgCanvas.height = H;
-    }
+    if (bgCanvas.width !== W || bgCanvas.height !== H) { bgCanvas.width = W; bgCanvas.height = H; }
     var bctx = bgCanvas.getContext('2d');
     bctx.clearRect(0, 0, W, H);
     if (spec) {
-      var range = Color.niceRange(spec.arr, S.res.status, spec.sym);
-      S.range = range;
+      S.range = Color.niceRange(spec.arr, S.res.status, spec.sym);
+      S.floored = 0;
+      if (spec.sym) {
+        /* 와도·발산은 벡터장을 미분한 값이라 잡음이 그대로 증폭된다. 범위를
+         * 자동으로만 잡으면 참값이 0 인 장(퍼텐셜 유동)이 요란하게 보인다.
+         * 측정 잡음이 채울 수 있는 만큼을 하한으로 둔다. */
+        var floorV = noiseFloor();
+        if (S.range[1] < floorV) { S.range = [-floorV, floorV]; S.floored = floorV; }
+      }
       var mask = (S.flow && S.flow.def.mask) ? S.flow.masked : null;
       bctx.putImageData(
-        R.fieldImage(bctx, S.res, spec.arr, range, spec.ramp, S.theme, W, H, mask), 0, 0);
+        R.fieldImage(bctx, S.res, spec.arr, S.range, spec.ramp, W, H, mask), 0, 0);
     } else if (S.bg === 'pair') {
       bctx.putImageData(R.pairImage(bctx, S.img.a, S.img.b, W, H), 0, 0);
     } else {
       var src = (S.bg === 'blink' && blink.phase) ? S.img.b : S.img.a;
       bctx.putImageData(R.particleImage(bctx, src, W, H), 0, 0);
     }
-    updateRamp(spec);
+    updateLegend(spec);
   }
 
-  var ARROW_RAMP_LO = 0.34;   /* the darkest end of the ramp vanishes on the image */
-
-  function updateRamp(spec) {
-    var bar = $('rampBar'), ramp, range, label, lo = 0;
-    if (spec) {
-      ramp = spec.ramp; range = S.range; label = I18N.t(spec.label);
-      if (spec.sym && S.bg === 'vort') {
-        label += '  ' + I18N.t('legend.cw') + ' → ' + I18N.t('legend.ccw');
-      }
-    } else if (S.ov.vectors && S.res) {
-      /* arrows over the raw frames are coloured by speed — show that scale */
-      ramp = 'speed'; range = speedRange(); label = I18N.t('legend.speed');
-      lo = ARROW_RAMP_LO;
-    } else { bar.hidden = true; return; }
-    bar.hidden = false;
-    bar.className = spec ? 'bar' : 'bar on-sensor';
-    $('ramp').style.background = Color.gradient(ramp, spec ? S.theme : 'dark', 90, lo, 1);
-    var dec = Math.abs(range[1]) < 0.1 ? 3 : (Math.abs(range[1]) < 2 ? 2 : 1);
-    $('rampLo').textContent = fmt(range[0], dec);
-    $('rampHi').textContent = fmt(range[1], dec);
-    $('rampLabel').textContent = label;
+  /* 벡터장을 중앙차분하면 변위 오차 σ 가 √2·σ/간격 만큼 기울기 잡음이 된다.
+   * 그 여덟 배를 색 범위의 하한으로 쓴다 — 잡음만 있는 장은 옅게 남는다. */
+  function noiseFloor() {
+    var sigma = S.truth ? Math.max(0.05, S.truth.rms) : 0.1;
+    var f = 8 * sigma * Math.SQRT2 / S.res.step;
+    var dec = Math.pow(10, Math.floor(Math.log(f) / Math.LN10));
+    var m = f / dec;
+    return (m <= 1.2 ? 1.2 : m <= 2 ? 2 : m <= 3 ? 3 : m <= 5 ? 5 : 10) * dec;
   }
 
   function draw() {
     if (!S.img) return;
-    fitCanvas();
-    var W = S.img.width, H = S.img.height, k = stage.width / W;
+    var cssW = fitCanvas();
+    var W = S.img.width, k = stage.width / W;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, stage.width, stage.height);
+    ctx.fillStyle = cssVar('--bg') || '#fff';
+    ctx.fillRect(0, 0, stage.width, stage.height);
     buildBackground();
-    var onField = !!bgSpec();
-    if (onField) {
-      /* masked cells carry no data; let them read as empty panel, not as a hole */
-      ctx.fillStyle = cssVar('--sunken');
-      ctx.fillRect(0, 0, stage.width, stage.height);
-    }
+    var spec = bgSpec(), onField = !!spec;
     ctx.imageSmoothingEnabled = onField;
     ctx.drawImage(bgCanvas, 0, 0, stage.width, stage.height);
     ctx.setTransform(k, 0, 0, k, 0, 0);
-    /* The particle frames stay dark whatever the page theme is, so marks drawn
-     * on them take dark-theme colours; marks on a scalar field follow the page. */
-    var markTheme = onField ? S.theme : 'dark';
-    var inkOnImage = '#5BE9AC';
-    var truthColor = onField ? cssVar('--signal') : '#FFA362';
-    var rejectColor = onField ? cssVar('--bad') : '#FF7D66';
-    var showTruth = S.ov.truth && S.truth;
+
+    /* 바탕이 어두우냐 밝으냐로 마크 색을 고른다. viridis 는 대부분 어두우니
+     * 흰 화살표에 잉크 테를, 발산형과 반전한 입자영상은 밝으니 navy 화살표에
+     * 흰 테를 두른다. 강조색은 어느 쪽이든 하나다. */
+    var darkField = onField && spec.ramp === 'field';
+    var arrow = darkField ? '#ffffff' : cssVar('--c1');
+    var halo = darkField ? 'rgba(21,24,28,.55)' : 'rgba(255,255,255,.8)';
+    var truthColor = cssVar('--c2');
+    var reject = darkField ? '#ffd0c6' : cssVar('--bad');
 
     if (S.flow) {
-      R.body(ctx, S.flow,
-        onField ? cssVar('--sunken') : 'rgba(110,135,130,.30)',
-        onField ? cssVar('--line-2') : 'rgba(190,225,215,.70)');
+      R.body(ctx, S.flow, onField ? cssVar('--glass2') : 'rgba(116,127,142,.16)',
+        darkField ? 'rgba(255,255,255,.55)' : 'rgba(88,99,114,.45)');
     }
     if (S.ov.grid && S.res) {
-      R.grid(ctx, S.res, onField ? 'rgba(20,30,30,.22)' : 'rgba(150,200,190,.28)', 0.8 / k * 1.2);
+      R.grid(ctx, S.res, darkField ? 'rgba(255,255,255,.35)' : 'rgba(88,99,114,.26)', 0.9 / k);
     }
     if (!S.res) return;
 
     var s = arrowScale();
+    var showTruth = S.ov.truth && S.truth;
     if (showTruth) {
-      /* a wide band under the measured arrow: where the two agree the band sits
-       * symmetrically around it, where they differ it sticks out */
-      R.truthVectors(ctx, S.res, S.truth, {
-        scale: s, color: truthColor, lineWidth: 3.6 / k, alpha: .95
-      });
+      R.truthVectors(ctx, S.res, S.truth, { scale: s, color: truthColor, lineWidth: 3.6 / k, alpha: .95 });
     }
     if (S.ov.vectors) {
       R.vectors(ctx, S.res, {
-        scale: s, limit: reveal.n, lineWidth: 1.15 / k,
-        ramp: onField ? null : 'speed', range: speedRange(), theme: markTheme,
-        rampLo: ARROW_RAMP_LO,
-        color: onField ? cssVar('--ink') : inkOnImage,
-        halo: showTruth ? null : (onField ? 'rgba(255,255,255,.55)' : 'rgba(0,0,0,.6)'),
-        showRejected: true, rejectedColor: rejectColor
+        scale: s, limit: reveal.n, lineWidth: 1.2 / k,
+        color: arrow, halo: showTruth ? null : halo,
+        showRejected: true, rejectedColor: reject
       });
     }
     if (S.ov.error && S.truth) {
       R.errorVectors(ctx, S.res, S.truth, { scale: s * 10, color: truthColor, lineWidth: 1.3 / k });
     }
 
-    /* the window being correlated right now, and the one under inspection */
     if (reveal.n < reveal.target && reveal.n > 0) {
       var kk = Math.min(reveal.n, reveal.target - 1);
       var i = kk % S.res.nx, j = (kk - i) / S.res.nx;
-      R.windowMarker(ctx, S.res.xs[i], S.res.ys[j], S.res.win, inkOnImage, 1.6 / k);
+      R.windowMarker(ctx, S.res.xs[i], S.res.ys[j], S.res.win, cssVar('--accent'), 1.6 / k);
     }
     if (S.picked >= 0) {
       var pi = S.picked % S.res.nx, pj = (S.picked - pi) / S.res.nx;
       R.windowMarker(ctx, S.res.xs[pi], S.res.ys[pj], S.res.win,
-        onField ? cssVar('--ink') : '#FFFFFF', 1.8 / k);
+        cssVar('--accent'), 1.8 / k, 'rgba(255,255,255,.8)');
     }
+    updateScaleBar(cssW);
   }
 
   function speedRange() {
     if (!S.der) return [0, 1];
-    if (!S.speedRange || S.speedKey !== S.res.ms) {
-      S.speedRange = Color.niceRange(S.der.mag, S.res.status, false);
-      S.speedKey = S.res.ms;
-    }
+    if (!S.speedRange) S.speedRange = Color.niceRange(S.der.mag, S.res.status, false);
     return S.speedRange;
   }
 
-  /* Arrow length: 1.0 means the largest vector spans one window spacing. */
+  /* 화살표 길이 1.0 = 가장 긴 벡터가 격자 간격만큼 */
   function arrowScale() {
-    var r = speedRange();
-    var ref = Math.max(0.3, r[1]);
-    return S.arrow * (S.res.step * 0.95) / ref;
+    return S.scale * (S.res.step * 0.95) / Math.max(0.3, speedRange()[1]);
   }
 
-  /* ---------- inspector -------------------------------------------------- */
+  /* ---------- 범례 ---------- */
 
-  /* Open the inspector on a window worth looking at: away from the border,
-   * moving well, and with the strongest correlation among those. Picking the
-   * single fastest vector tends to land on the oddest one in the field. */
+  function updateLegend(spec) {
+    var bar = $('rampBar');
+    if (spec) {
+      bar.hidden = false;
+      $('ramp').style.background = Color.gradient(spec.ramp, 90);
+      var dec = Math.abs(S.range[1]) < 0.1 ? 3 : (Math.abs(S.range[1]) < 2 ? 2 : 1);
+      $('rampLo').textContent = fmt(S.range[0], dec);
+      $('rampHi').textContent = fmt(S.range[1], dec);
+    } else bar.hidden = true;
+    $('legendCap').textContent = t('lc.' + S.bg) +
+      (S.floored ? ' ' + tf('lc.floored', fmt(S.floored, 3)) : '');
+    /* 열쇠는 화면에 실제로 그려진 색으로 — viridis 위에서는 흰 화살표다 */
+    var darkField = !!(spec && spec.ramp === 'field');
+    key('keyMeas', darkField ? '#ffffff' : 'var(--c1)', darkField);
+    key('keyRej', darkField ? '#ffd0c6' : 'var(--bad)', darkField);
+    key('keyTruth', 'var(--c2)', false);
+    $('keyMeas').hidden = !S.ov.vectors;
+    $('keyTruth').hidden = !(S.ov.truth && S.truth);
+    $('keyRej').hidden = !S.ov.vectors;
+    $('keyScale').hidden = !S.ov.vectors || !S.res;
+  }
+
+  function key(id, color, outlined) {
+    var el = $(id);
+    el.style.color = color;
+    el.firstElementChild.style.boxShadow = outlined ? '0 0 0 1px rgba(21,24,28,.55)' : 'none';
+  }
+
+  /* 화살표 길이의 기준자 — 보기 좋은 수를 골라 그 길이만큼 선을 긋는다 */
+  function updateScaleBar(cssW) {
+    if (!S.res || !S.ov.vectors) return;
+    var perDisp = arrowScale() * (cssW / S.img.width);   /* 화면 px / 변위 px */
+    var nice = [0.5, 1, 2, 5, 10, 20], pick = nice[0];
+    for (var i = 0; i < nice.length; i++) {
+      pick = nice[i];
+      if (nice[i] * perDisp >= 22) break;
+    }
+    $('scaleTick').style.width = Math.max(10, Math.min(90, pick * perDisp)).toFixed(0) + 'px';
+    $('scaleText').textContent = tf('legend.scale', pick);
+  }
+
+  /* ---------- 상관 현미경 ---------- */
+
   function autoPick() {
     if (!S.res) return;
     var res = S.res, n = res.nx * res.ny, k, speeds = [];
-    for (k = 0; k < n; k++) {
-      if (res.status[k] === 0) speeds.push(Math.hypot(res.u[k], res.v[k]));
-    }
+    for (k = 0; k < n; k++) if (res.status[k] === 0) speeds.push(Math.hypot(res.u[k], res.v[k]));
     if (!speeds.length) return;
     speeds.sort(function (a, b) { return a - b; });
     var floor = speeds[Math.floor(speeds.length * 0.6)];
@@ -3044,20 +2977,18 @@ textarea.dump {
   function drawInspector() {
     var ins = S.insp;
     if (!ins) return;
-    R.zoom($('winA'), ins.a, ins.win, true);
-    R.zoom($('winB'), ins.b, ins.win, true);
+    R.zoom($('winA'), ins.a, ins.win);
+    R.zoom($('winB'), ins.b, ins.win);
     var half = Math.min(ins.limit, S.corrMode === '3d' ? 12 : 10);
-    var ink = cssVar('--laser'), sig = cssVar('--signal');
-    if (S.corrMode === '3d') R.corrSurface($('corr'), ins, half, S.theme, ink, sig);
-    else R.corrMap($('corr'), ins, half, S.theme, '#FFFFFF');
+    if (S.corrMode === '3d') R.corrSurface($('corr'), ins, half, cssVar('--text'));
+    else R.corrMap($('corr'), ins, half);
 
     var k = S.picked;
     $('rPos').textContent = Math.round(ins.cx) + ', ' + Math.round(ins.cy) + ' px';
     $('rMeas').textContent = fmt(ins.u, 3) + ', ' + fmt(ins.v, 3) + ' px';
     if (S.truth) {
       $('rTruth').textContent = fmt(S.truth.tu[k], 3) + ', ' + fmt(S.truth.tv[k], 3) + ' px';
-      var ex = ins.u - S.truth.tu[k], ey = ins.v - S.truth.tv[k];
-      $('rErr').textContent = fmt(Math.hypot(ex, ey), 3) + ' px';
+      $('rErr').textContent = fmt(Math.hypot(ins.u - S.truth.tu[k], ins.v - S.truth.tv[k]), 3) + ' px';
     } else {
       $('rTruth').textContent = '—';
       $('rErr').textContent = '—';
@@ -3066,10 +2997,9 @@ textarea.dump {
     $('rShift').textContent = ins.shiftX + ', ' + ins.shiftY + ' px';
     $('rPeak').textContent = fmt(ins.peak.peak, 3);
     $('rSnr').textContent = fmt(ins.peak.snr, 2);
-    var st = S.res.status[k];
-    var v = $('rStatus');
+    var st = S.res.status[k], v = $('rStatus');
     v.setAttribute('data-st', st);
-    v.textContent = I18N.t(st === 0 ? 'st.ok' : st === 1 ? 'st.outlier' : st === 2 ? 'st.masked' : 'st.weak');
+    v.textContent = t(st === 0 ? 'st.ok' : st === 1 ? 'st.outlier' : st === 2 ? 'st.masked' : 'st.weak');
   }
 
   function pickAt(clientX, clientY) {
@@ -3084,89 +3014,24 @@ textarea.dump {
     inspect(j * S.res.nx + i);
   }
 
-  /* ---------- metrics & diagnostics -------------------------------------- */
+  /* ---------- 측정 요약 ---------- */
 
-  function updateMetrics() {
+  function summary() {
     var res = S.res, n = res.nx * res.ny;
-    var valid = 0, masked = 0, rejected = 0, weak = 0, peakSum = 0, snrSum = 0, cnt = 0;
+    var valid = 0, masked = 0, peakSum = 0, snrSum = 0, cnt = 0;
     for (var k = 0; k < n; k++) {
-      var st = res.status[k];
-      if (st === 2) { masked++; continue; }
+      if (res.status[k] === 2) { masked++; continue; }
       cnt++;
       peakSum += res.corr[k];
       snrSum += Math.min(20, res.snr[k]);
-      if (st === 0) valid++; else if (st === 1) rejected++; else weak++;
+      if (res.status[k] === 0) valid++;
     }
-    var meanPeak = cnt ? peakSum / cnt : 0, meanSnr = cnt ? snrSum / cnt : 0;
-    var validPct = cnt ? 100 * valid / cnt : 0;
-
-    var hero = $('rmsVal'), frac = $('rmsFraction');
-    var heroCap = document.querySelector('.hero .cap');
-    if (S.truth) {
-      heroCap.textContent = I18N.t('m.rms');
-      hero.innerHTML = fmt(S.truth.rms, 3) + '<small> ' + I18N.t('m.rms.px') + '</small>';
-      var inv = S.truth.rms > 0 ? Math.round(1 / S.truth.rms) : 0;
-      frac.innerHTML = I18N.t('m.subpx') + ' — ' + I18N.t('m.subpx.sub') + ' <b>1/' + inv + '</b>';
-      document.querySelector('.hero .sub').textContent = I18N.t('m.rms.sub');
-    } else {
-      heroCap.textContent = I18N.t('m.peak');
-      hero.innerHTML = fmt(meanPeak, 3);
-      frac.textContent = '';
-      document.querySelector('.hero .sub').textContent = I18N.t('upload.hint');
-    }
-
-    $('stVectors').textContent = res.nx + ' × ' + res.ny + ' = ' + (n - masked);
-    $('stValid').textContent = fmt(validPct, 1) + ' %';
-    $('stPeak').textContent = fmt(meanPeak, 3);
-    $('stBias').textContent = S.truth
-      ? fmt(S.truth.biasX, 3) + ', ' + fmt(S.truth.biasY, 3) + ' px' : '—';
-    $('stMax').textContent = S.truth ? fmt(S.truth.max, 2) + ' px' : '—';
-    $('stPasses').textContent = res.passes.map(function (p) { return p.win; }).join(' → ') + ' px';
-    $('stTime').textContent = Math.round(res.ms) + ' ms';
-
-    syncKeys();
-
-    /* --- health checks --- */
-    var rows = [];
-    var nI = S.uploaded ? null : S.seed * Math.pow(S.win / 32, 2);
-    if (nI !== null) {
-      rows.push(chk('diag.seed', nI >= 8 ? 'ok' : nI >= 4 ? 'warn' : 'bad',
-        fmt(nI, 1) + (I18N.lang === 'ko' ? ' 개' : ''),
-        nI >= 8 ? 'diag.seed.ok' : 'diag.seed.warn'));
-    }
-    var p98 = percentileSpeed(0.98);
-    var q = p98 / (S.win / 4);
-    rows.push(chk('diag.quarter', q <= 1 ? 'ok' : q <= 1.4 ? 'warn' : 'bad',
-      fmt(p98, 1) + ' / ' + fmt(S.win / 4, 1) + ' px',
-      q <= 1 ? 'diag.quarter.ok' : 'diag.quarter.warn'));
-    if (!S.uploaded) {
-      rows.push(chk('diag.dp', (S.dp >= 1.8 && S.dp <= 3.6) ? 'ok' : (S.dp >= 1.4 ? 'warn' : 'bad'),
-        fmt(S.dp, 1) + ' px', (S.dp >= 1.8 && S.dp <= 3.6) ? 'diag.dp.ok' : 'diag.dp.warn'));
-    }
-    rows.push(chk('diag.snr', meanSnr >= 1.5 ? 'ok' : meanSnr >= 1.2 ? 'warn' : 'bad',
-      fmt(meanSnr, 2), meanSnr >= 1.5 ? 'diag.snr.ok' : 'diag.snr.warn'));
-    rows.push(chk('diag.valid', validPct >= 95 ? 'ok' : validPct >= 85 ? 'warn' : 'bad',
-      fmt(validPct, 1) + ' %', validPct >= 95 ? 'diag.valid.ok' : 'diag.valid.warn'));
-    $('diags').innerHTML = rows.join('');
-  }
-
-  /* the legend names only what is on screen, in the colour it was drawn in */
-  function syncKeys() {
-    var onField = !!(S.res && bgSpec());
-    var rampColoured = S.ov.vectors && !onField;
-    $('keyMeas').hidden = !S.ov.vectors || rampColoured;
-    $('keyMeas').style.color = onField ? 'var(--ink)' : '#5BE9AC';
-    $('keyTruth').hidden = !(S.ov.truth && S.truth);
-    $('keyTruth').style.color = onField ? 'var(--signal)' : '#FFA362';
-    $('keyRej').style.color = onField ? 'var(--bad)' : '#FF7D66';
-  }
-
-  function chk(labelKey, level, value, noteKey) {
-    var mark = level === 'ok' ? '✓' : level === 'warn' ? '!' : '✕';
-    return '<div class="diag" data-level="' + level + '">' +
-      '<span class="mark">' + mark + '</span>' +
-      '<span class="what">' + I18N.t(labelKey) + '<em>' + I18N.t(noteKey) + '</em></span>' +
-      '<span class="num">' + value + '</span></div>';
+    return {
+      n: n, masked: masked, cnt: cnt,
+      meanPeak: cnt ? peakSum / cnt : 0,
+      meanSnr: cnt ? snrSum / cnt : 0,
+      validPct: cnt ? 100 * valid / cnt : 0
+    };
   }
 
   function percentileSpeed(p) {
@@ -3176,53 +3041,59 @@ textarea.dump {
         if (S.res.status[k] === 2) continue;
         v.push(Math.hypot(S.truth.tu[k], S.truth.tv[k]));
       }
-    } else {
+    } else if (S.der) {
       for (k = 0; k < S.der.mag.length; k++) {
         if (S.res.status[k] === 2) continue;
         v.push(S.der.mag[k]);
       }
     }
-    if (!v.length) return 0;
+    if (!v.length) return S.disp;
     v.sort(function (a, b) { return a - b; });
     return v[Math.min(v.length - 1, Math.floor(v.length * p))];
   }
 
-  /* ---------- story steps ------------------------------------------------ */
+  function updateStats() {
+    var res = S.res, m = summary();
+    if (S.truth) {
+      $('heroCap').textContent = t('m.rms');
+      $('heroVal').textContent = fmt(S.truth.rms, 3) + ' px';
+      $('stSubpx').textContent = S.truth.rms > 0
+        ? tf('m.subpxv', Math.round(1 / S.truth.rms)) : '—';
+    } else {
+      $('heroCap').textContent = t('m.peakcap');
+      $('heroVal').textContent = fmt(m.meanPeak, 3);
+      $('stSubpx').textContent = '—';
+    }
+    $('stVectors').textContent = res.nx + '×' + res.ny + ' = ' + (m.n - m.masked);
+    $('stValid').textContent = fmt(m.validPct, 1) + ' %';
+    $('stPeak').textContent = fmt(m.meanPeak, 3);
+    $('stBias').textContent = S.truth
+      ? fmt(S.truth.biasX, 3) + ', ' + fmt(S.truth.biasY, 3) + ' px' : '—';
+    $('stPasses').textContent = res.passes.map(function (p) { return p.win; }).join(' → ') + ' px';
+    $('stTime').textContent = Math.round(res.ms) + ' ms';
+  }
+
+  /* ---------- 단계 ---------- */
 
   function setStep(n) {
     S.step = n;
-    var btns = document.querySelectorAll('.step');
+    var btns = $('stepSeg').children;
     for (var i = 0; i < btns.length; i++) {
-      btns[i].setAttribute('aria-current', String(+btns[i].getAttribute('data-step') === n));
+      btns[i].className = (+btns[i].getAttribute('data-step') === n) ? 'on' : '';
     }
-    if (n === 1) {
-      $('bgSelect').value = 'a';
-      $('ovVectors').checked = false; $('ovGrid').checked = false;
-      $('ovTruth').checked = false; $('ovError').checked = false;
-    } else if (n === 2) {
-      $('bgSelect').value = 'blink';
-      $('ovVectors').checked = false; $('ovGrid').checked = false;
-    } else if (n === 3) {
-      $('bgSelect').value = 'a';
-      $('ovVectors').checked = false; $('ovGrid').checked = true;
-    } else if (n === 4) {
-      $('bgSelect').value = 'speed';
-      $('ovVectors').checked = true; $('ovGrid').checked = false;
-    }
-    readControls();
+    $('headHint').textContent = n ? t('step.' + n + '.d') : '';
+    if (n === 1) { S.bg = 'a'; S.ov.vectors = false; S.ov.grid = false; S.ov.truth = false; }
+    else if (n === 2) { S.bg = 'blink'; S.ov.vectors = false; S.ov.grid = false; }
+    else if (n === 3) { S.bg = 'a'; S.ov.vectors = false; S.ov.grid = true; }
+    else if (n === 4) { S.bg = 'speed'; S.ov.vectors = true; S.ov.grid = false; }
+    pushControls();
+    updateStates();
     updateBlink();
-    if (n === 3 && S.res) {
-      var mid = Math.floor(S.res.ny / 2) * S.res.nx + Math.floor(S.res.nx / 2);
-      inspect(S.picked >= 0 ? S.picked : mid);
-      var el = document.querySelector('.inspector');
-      if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    }
-    if (n === 4 && S.res) startReveal();
-    draw();
-    $('stageHint').textContent = I18N.t(n === 2 ? 'stage.blink' : 'stage.hint');
+    bgKey = '';
+    if (n === 3 && S.res && S.picked < 0) autoPick();
+    if (n === 4 && S.res) startReveal(); else draw();
   }
 
-  /* ---------- blink ------------------------------------------------------ */
   function updateBlink() {
     var want = S.bg === 'blink';
     if (want === blink.on) return;
@@ -3230,28 +3101,25 @@ textarea.dump {
     cancelAnimationFrame(blink.raf);
     if (!want) { blink.phase = 0; bgKey = ''; draw(); return; }
     var last = 0;
-    function frame(t) {
-      if (!last) last = t;
-      if (t - last > 420) { last = t; blink.phase ^= 1; draw(); }
+    function frame(ts) {
+      if (!last) last = ts;
+      if (ts - last > 420) { last = ts; blink.phase ^= 1; bgKey = ''; draw(); }
       if (blink.on) blink.raf = requestAnimationFrame(frame);
     }
     blink.raf = requestAnimationFrame(frame);
   }
 
-  /* ---------- upload ----------------------------------------------------- */
+  /* ---------- 내 영상 ---------- */
 
   function loadFile(file, which) {
-    var img = new Image();
-    var url = URL.createObjectURL(file);
+    var img = new Image(), url = URL.createObjectURL(file);
     img.onload = function () {
-      var cap = 640;
-      var sc = Math.min(1, cap / Math.max(img.naturalWidth, img.naturalHeight));
+      var sc = Math.min(1, 640 / Math.max(img.naturalWidth, img.naturalHeight));
       var w = Math.max(64, Math.round(img.naturalWidth * sc));
       var h = Math.max(64, Math.round(img.naturalHeight * sc));
       var c = R.offscreen(w, h), cc = c.getContext('2d');
       cc.drawImage(img, 0, 0, w, h);
-      var d = cc.getImageData(0, 0, w, h);
-      var rec = { g: Synth.fromImageData(d), w: w, h: h };
+      var rec = { g: Synth.fromImageData(cc.getImageData(0, 0, w, h)), w: w, h: h };
       if (which === 'a') S.pendingA = rec; else S.pendingB = rec;
       URL.revokeObjectURL(url);
       tryUploaded();
@@ -3262,29 +3130,26 @@ textarea.dump {
 
   function tryUploaded() {
     if (!S.pendingA || !S.pendingB) return;
-    var A = S.pendingA, B = S.pendingB, note = '';
-    var w = A.w, h = A.h, b = B.g;
+    var A = S.pendingA, B = S.pendingB, w = A.w, h = A.h, b = B.g, note = '';
     if (B.w !== w || B.h !== h) {
       var out = new Float32Array(w * h);
       for (var j = 0; j < h; j++) {
-        for (var i = 0; i < w; i++) {
-          out[j * w + i] = (i < B.w && j < B.h) ? B.g[j * B.w + i] : 0;
-        }
+        for (var i = 0; i < w; i++) out[j * w + i] = (i < B.w && j < B.h) ? B.g[j * B.w + i] : 0;
       }
-      b = out;
-      note = 'upload.size';
+      b = out; note = 'upload.size';
     }
     S.uploaded = { a: A.g, b: b, w: w, h: h };
     S.picked = -1;
     if (note) toast(note);
+    updateStates(); updateHints();
     run(true);
   }
 
   function toast(key, raw) {
-    var t = $('toast');
-    t.textContent = raw || I18N.t(key);
+    var el = $('toast');
+    el.textContent = raw || t(key);
     if (toast.timer) clearTimeout(toast.timer);
-    toast.timer = setTimeout(function () { t.textContent = ''; }, 4000);
+    toast.timer = setTimeout(function () { el.textContent = ''; }, 4000);
   }
 
   function csv() {
@@ -3292,52 +3157,80 @@ textarea.dump {
     for (var j = 0; j < res.ny; j++) {
       for (var i = 0; i < res.nx; i++) {
         var k = j * res.nx + i;
-        lines.push([
-          res.xs[i].toFixed(1), res.ys[j].toFixed(1),
-          res.u[k].toFixed(4), res.v[k].toFixed(4),
-          res.corr[k].toFixed(4), Math.min(99, res.snr[k]).toFixed(2),
-          res.status[k]
-        ].join(','));
+        lines.push([res.xs[i].toFixed(1), res.ys[j].toFixed(1),
+          res.u[k].toFixed(4), res.v[k].toFixed(4), res.corr[k].toFixed(4),
+          Math.min(99, res.snr[k]).toFixed(2), res.status[k]].join(','));
       }
     }
     return lines.join('\n');
   }
 
-  /* ---------- wiring ----------------------------------------------------- */
+  function showDump(text) {
+    var d = $('dump');
+    d.value = text; d.hidden = false; d.select();
+    $('gUpload').open = true;
+    toast('copy.fail');
+  }
+
+  /* ---------- 배선 ---------- */
 
   function applyLang(next) {
     I18N.apply(next);
+    document.title = t('doc.title');
     buildFlowSelect();
-    syncLabels();
-    $('langBtn').textContent = I18N.t('app.langLabel');
-    $('runBtn').textContent = I18N.t(S.res ? 'run.again' : 'run');
-    $('stageHint').textContent = I18N.t(S.step === 2 ? 'stage.blink' : 'stage.hint');
-    if (S.res) { updateMetrics(); drawInspector(); bgKey = ''; draw(); }
-    store('lang', I18N.lang);
+    pushControls();
+    updateHints(); updateStates();
+    $('headHint').textContent = S.step ? t('step.' + S.step + '.d') : '';
+    $('runBtn').textContent = t(S.res ? 'run.again' : 'run');
+    var lb = $('langSeg').children;
+    for (var i = 0; i < lb.length; i++) {
+      lb[i].className = lb[i].getAttribute('data-lang') === I18N.lang ? 'on' : '';
+    }
+    if (S.res) { updateStats(); updateWarn(); drawInspector(); bgKey = ''; draw(); }
+    try { localStorage.setItem('piv.lang', I18N.lang); } catch (e) { /* 사생활 보호 모드 */ }
+  }
+
+  function afterChange(act) {
+    updateHints();
+    updateStates();
+    updateWarn();
+    if (act === 'draw') updateBlink();
+    schedule(act);
   }
 
   function bind() {
-    var reshootIds = ['flowKind', 'dispRange', 'seedRange', 'dpRange', 'noiseRange', 'lossRange', 'sizeSelect'];
-    var recomputeIds = ['winSelect', 'overlapSelect', 'passesSelect', 'subpixSelect', 'threshSelect'];
-    var redrawIds = ['bgSelect', 'scaleRange', 'ovVectors', 'ovTruth', 'ovError', 'ovGrid'];
-
-    reshootIds.forEach(function (id) {
-      $(id).addEventListener('input', function () {
-        readControls();
-        if (S.uploaded && id !== 'flowKind') return;
-        S.uploaded = null; S.pendingA = S.pendingB = null;
-        run(false);
+    NUMS.forEach(function (p) {
+      var r = $(p.range), n = $(p.num);
+      r.addEventListener('input', function () {
+        S[p.key] = +r.value;
+        n.value = fmt(S[p.key], p.dec);
+        afterChange(p.act);
+      });
+      n.addEventListener('change', function () {
+        var v = +n.value;
+        if (!isFinite(v)) { n.value = fmt(S[p.key], p.dec); return; }
+        v = Math.max(+r.min, Math.min(+r.max, v));
+        S[p.key] = v;
+        r.value = v;
+        n.value = fmt(v, p.dec);
+        afterChange(p.act);
       });
     });
-    recomputeIds.forEach(function (id) {
-      $(id).addEventListener('input', function () { readControls(); run(false); });
+
+    PICKS.forEach(function (p) {
+      $(p.id).addEventListener('change', function () {
+        S[p.key] = p.str ? this.value : +this.value;
+        if (p.key === 'field' || p.key === 'size') {
+          S.uploaded = null; S.pendingA = S.pendingB = null;
+        }
+        afterChange(p.act);
+      });
     });
-    redrawIds.forEach(function (id) {
-      $(id).addEventListener('input', function () {
-        readControls();
-        updateBlink();
+
+    ['ovVectors', 'ovTruth', 'ovError', 'ovGrid'].forEach(function (id) {
+      $(id).addEventListener('change', function () {
+        S.ov[id.slice(2).toLowerCase()] = this.checked;   /* ovTruth -> truth */
         bgKey = '';
-        syncKeys();
         draw();
       });
     });
@@ -3347,49 +3240,48 @@ textarea.dump {
       S.rngSeed = (Math.random() * 1e9) | 0;
       S.uploaded = null; S.pendingA = S.pendingB = null;
       $('fileA').value = ''; $('fileB').value = '';
+      updateStates();
       run(true);
     });
+    $('copyCsv').addEventListener('click', function () {
+      if (!S.res) return;
+      var text = csv();
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () { toast('copy.done'); },
+          function () { showDump(text); });
+      } else showDump(text);
+    });
 
-    var steps = document.querySelectorAll('.step');
-    for (var i = 0; i < steps.length; i++) {
-      steps[i].addEventListener('click', function () {
-        setStep(+this.getAttribute('data-step'));
-      });
-    }
+    $('stepSeg').addEventListener('click', function (e) {
+      var b = e.target.closest('button[data-step]');
+      if (b) setStep(+b.getAttribute('data-step'));
+    });
+    $('langSeg').addEventListener('click', function (e) {
+      var b = e.target.closest('button[data-lang]');
+      if (b) applyLang(b.getAttribute('data-lang'));
+    });
+    $('corrSeg').addEventListener('click', function (e) {
+      var b = e.target.closest('button[data-mode]');
+      if (!b) return;
+      S.corrMode = b.getAttribute('data-mode');
+      var kids = this.children;
+      for (var i = 0; i < kids.length; i++) kids[i].className = kids[i] === b ? 'on' : '';
+      drawInspector();
+    });
 
-    $('sensor').addEventListener('click', function (e) { pickAt(e.clientX, e.clientY); });
-    $('sensor').setAttribute('tabindex', '0');
-    $('sensor').addEventListener('keydown', function (e) {
+    var wrap = $('stageWrap');
+    wrap.addEventListener('click', function (e) { pickAt(e.clientX, e.clientY); });
+    wrap.setAttribute('tabindex', '0');
+    wrap.addEventListener('keydown', function (e) {
       if (!S.res) return;
       var d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
       if (!d) return;
       e.preventDefault();
       var k = S.picked < 0 ? 0 : S.picked;
-      var i2 = k % S.res.nx, j2 = (k - i2) / S.res.nx;
-      i2 = Math.max(0, Math.min(S.res.nx - 1, i2 + d[0]));
-      j2 = Math.max(0, Math.min(S.res.ny - 1, j2 + d[1]));
-      inspect(j2 * S.res.nx + i2);
-    });
-
-    var modes = document.querySelectorAll('input[name="corrMode"]');
-    for (i = 0; i < modes.length; i++) {
-      modes[i].addEventListener('change', function () {
-        S.corrMode = this.value;
-        drawInspector();
-      });
-    }
-
-    $('langBtn').addEventListener('click', function () {
-      applyLang(I18N.lang === 'ko' ? 'en' : 'ko');
-    });
-    $('themeBtn').addEventListener('click', function () {
-      S.themeMode = S.themeMode === 'auto'
-        ? (S.theme === 'dark' ? 'light' : 'dark')
-        : (S.themeMode === 'dark' ? 'light' : 'dark');
-      resolveTheme();
-      store('theme', S.themeMode);
-      bgKey = '';
-      draw(); drawInspector();
+      var i = k % S.res.nx, j = (k - i) / S.res.nx;
+      i = Math.max(0, Math.min(S.res.nx - 1, i + d[0]));
+      j = Math.max(0, Math.min(S.res.ny - 1, j + d[1]));
+      inspect(j * S.res.nx + i);
     });
 
     $('fileA').addEventListener('change', function () {
@@ -3402,23 +3294,9 @@ textarea.dump {
       S.uploaded = null; S.pendingA = S.pendingB = null;
       $('fileA').value = ''; $('fileB').value = '';
       $('dump').hidden = true;
+      updateStates(); updateHints();
       run(true);
     });
-    $('copyCsv').addEventListener('click', function () {
-      if (!S.res) return;
-      var text = csv();
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(function () { toast('copy.done'); },
-          function () { showDump(text); });
-      } else showDump(text);
-    });
-
-    var mq = root.matchMedia && root.matchMedia('(prefers-color-scheme: dark)');
-    if (mq && mq.addEventListener) {
-      mq.addEventListener('change', function () {
-        if (S.themeMode === 'auto') { resolveTheme(); bgKey = ''; draw(); drawInspector(); }
-      });
-    }
 
     var rt;
     root.addEventListener('resize', function () {
@@ -3427,34 +3305,24 @@ textarea.dump {
     });
   }
 
-  function showDump(text) {
-    var d = $('dump');
-    d.value = text;
-    d.hidden = false;
-    d.select();
-    toast('copy.fail');
-  }
-
-  /* ---------- boot ------------------------------------------------------- */
+  /* ---------- 시작 ---------- */
 
   function init() {
-    var savedTheme = store('theme');
-    if (savedTheme === 'light' || savedTheme === 'dark') S.themeMode = savedTheme;
-    resolveTheme();
-    var savedLang = store('lang');
-    applyLang(savedLang === 'en' ? 'en' : 'ko');
+    var saved = null;
+    try { saved = localStorage.getItem('piv.lang'); } catch (e) { /* 무시 */ }
+    applyLang(saved === 'en' ? 'en' : 'ko');
     bind();
-    readControls();
+    pushControls();
+    updateHints();
+    updateStates();
     shoot();
     compute(true);
     veil(null);
-    setStep(0);
-    $('runBtn').textContent = I18N.t('run.again');
+    $('runBtn').textContent = t('run.again');
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else init();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 
 </script>

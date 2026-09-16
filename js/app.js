@@ -1,58 +1,78 @@
-/* PIV Simulator — UI controller.
- * Owns the state, drives synthesis -> correlation -> drawing, and keeps the
- * inspector, the metrics and the diagnostics in step with each other.
+/* PIV Simulator — 상태와 배선.
+ * 합성 → 상관 → 그리기를 잇고, 상관 현미경·측정 요약·경고를 한 상태에서 맞춘다.
+ * 디자인 지침: 파라미터는 슬라이더+숫자칸+유도값 힌트 세 짝, 접힌 그룹은 자기
+ * 상태를 말하고, 경고는 값 옆에서 즉시 뜨되 한 번에 하나만 띄운다.
  */
 (function (root) {
   'use strict';
 
   var Flow = root.PIVSim.Flow, Synth = root.PIVSim.Synth, PIV = root.PIVSim.PIV;
   var R = root.PIVSim.Render, Color = root.PIVSim.Color, I18N = root.PIVSim.I18N;
-
+  var t = function (k) { return I18N.t(k); };
+  var tf = function () { return I18N.tf.apply(I18N, arguments); };
   var $ = function (id) { return document.getElementById(id); };
 
   var S = {
-    themeMode: 'auto', theme: 'light',
     size: 384, field: 'cylinder', disp: 6,
     seed: 14, dp: 2.6, noise: 1.5, loss: 5,
     win: 32, overlap: 0.5, passes: 3, subpix: 'gauss', thresh: 2,
-    bg: 'a', arrow: 1, step: 0,
+    bg: 'a', scale: 1, step: 0,
     ov: { vectors: true, truth: false, error: false, grid: false },
-    corrMode: '3d',
-    rngSeed: 7,
-    flow: null, img: null, res: null, truth: null, der: null,
+    corrMode: '3d', rngSeed: 7,
+    flow: null, img: null, res: null, truth: null, der: null, cfg: null,
     uploaded: null, pendingA: null, pendingB: null,
-    picked: -1, insp: null,
-    busy: false
+    picked: -1, insp: null, busy: false, range: [0, 1]
   };
 
+  /* 숫자칸과 슬라이더가 한 벌로 움직이는 파라미터 */
+  var NUMS = [
+    { key: 'disp', range: 'dispRange', num: 'dispNum', dec: 1, act: 'shoot' },
+    { key: 'seed', range: 'seedRange', num: 'seedNum', dec: 0, act: 'shoot' },
+    { key: 'dp', range: 'dpRange', num: 'dpNum', dec: 1, act: 'shoot' },
+    { key: 'loss', range: 'lossRange', num: 'lossNum', dec: 0, act: 'shoot' },
+    { key: 'noise', range: 'noiseRange', num: 'noiseNum', dec: 1, act: 'shoot' },
+    { key: 'scale', range: 'scaleRange', num: 'scaleNum', dec: 1, act: 'draw' }
+  ];
+  var PICKS = [
+    { key: 'field', id: 'flowKind', act: 'shoot', str: true },
+    { key: 'size', id: 'sizeSelect', act: 'shoot' },
+    { key: 'win', id: 'winSelect', act: 'run' },
+    { key: 'overlap', id: 'overlapSelect', act: 'run' },
+    { key: 'passes', id: 'passesSelect', act: 'run' },
+    { key: 'subpix', id: 'subpixSelect', act: 'run', str: true },
+    { key: 'thresh', id: 'threshSelect', act: 'run' },
+    { key: 'bg', id: 'bgSelect', act: 'draw', str: true }
+  ];
+
   var stage = $('stage'), ctx = stage.getContext('2d');
-  var bgCanvas = R.offscreen(8, 8), fgCanvas = R.offscreen(8, 8);
-  var bgKey = '', reveal = { n: 0, target: 0, raf: 0, t0: 0 };
+  var bgCanvas = R.offscreen(8, 8), bgKey = '';
+  var reveal = { n: 0, target: 0, raf: 0, t0: 0 };
   var blink = { raf: 0, on: false, phase: 0 };
+  var pending = 0;
 
-  /* ---------- storage (per-viewer convenience only) --------------------- */
-  function store(k, v) {
-    try { if (v === undefined) return localStorage.getItem('piv.' + k); localStorage.setItem('piv.' + k, v); }
-    catch (e) { return null; }
-  }
-
-  /* ---------- theme ------------------------------------------------------ */
-  function resolveTheme() {
-    if (S.themeMode === 'auto') {
-      var m = root.matchMedia && root.matchMedia('(prefers-color-scheme: dark)');
-      S.theme = m && m.matches ? 'dark' : 'light';
-      document.documentElement.removeAttribute('data-theme');
-    } else {
-      S.theme = S.themeMode;
-      document.documentElement.setAttribute('data-theme', S.theme);
-    }
-  }
-
+  function fmt(v, n) { return Number(v).toFixed(n === undefined ? 2 : n); }
   function cssVar(name) {
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   }
 
-  /* ---------- controls --------------------------------------------------- */
+  /* ---------- 격자 산수 (계산 전에도 힌트를 띄우려면 필요하다) ---------- */
+
+  function gridCount() {
+    var W = S.uploaded ? S.uploaded.w : S.size;
+    var H = S.uploaded ? S.uploaded.h : S.size;
+    var step = Math.max(1, Math.round(S.win * (1 - S.overlap)));
+    return {
+      step: step,
+      nx: Math.max(1, Math.floor((W - S.win) / step) + 1),
+      ny: Math.max(1, Math.floor((H - S.win) / step) + 1),
+      W: W, H: H
+    };
+  }
+  function seedInWindow() { return S.seed * Math.pow(S.win / 32, 2); }
+  function nextWin() { return S.win < 64 ? S.win * 2 : 64; }
+
+  /* ---------- 컨트롤 ---------- */
+
   function buildFlowSelect() {
     var sel = $('flowKind'), groups = {}, order = [];
     sel.innerHTML = '';
@@ -62,11 +82,11 @@
     });
     order.forEach(function (g) {
       var og = document.createElement('optgroup');
-      og.label = I18N.t('grp.' + g);
+      og.label = t('grp.' + g);
       groups[g].forEach(function (f) {
         var o = document.createElement('option');
         o.value = f.id;
-        o.textContent = I18N.t('f.' + f.id);
+        o.textContent = t('f.' + f.id);
         og.appendChild(o);
       });
       sel.appendChild(og);
@@ -74,58 +94,126 @@
     sel.value = S.field;
   }
 
-  function fmt(v, n) { return v.toFixed(n === undefined ? 2 : n); }
-
-  function syncLabels() {
-    $('dispVal').textContent = fmt(S.disp, 1) + ' px';
-    $('seedVal').textContent = S.seed + (I18N.lang === 'ko' ? ' 개' : '');
-    $('dpVal').textContent = fmt(S.dp, 1) + ' px';
-    $('noiseVal').textContent = fmt(S.noise, 1) + ' %';
-    $('lossVal').textContent = S.loss + ' %';
-    $('scaleVal').textContent = '× ' + fmt(S.arrow, 1);
-  }
-
-  function readControls() {
-    S.field = $('flowKind').value || S.field;
-    S.disp = +$('dispRange').value;
-    S.seed = +$('seedRange').value;
-    S.dp = +$('dpRange').value;
-    S.noise = +$('noiseRange').value;
-    S.loss = +$('lossRange').value;
-    S.size = +$('sizeSelect').value;
-    S.win = +$('winSelect').value;
-    S.overlap = +$('overlapSelect').value;
-    S.passes = +$('passesSelect').value;
-    S.subpix = $('subpixSelect').value;
-    S.thresh = +$('threshSelect').value;
-    S.bg = $('bgSelect').value;
-    S.arrow = +$('scaleRange').value;
-    S.ov.vectors = $('ovVectors').checked;
-    S.ov.truth = $('ovTruth').checked;
-    S.ov.error = $('ovError').checked;
-    S.ov.grid = $('ovGrid').checked;
-    syncLabels();
-  }
-
-  /* ---------- pipeline --------------------------------------------------- */
-
-  function shoot() {
-    if (S.uploaded) {
-      S.flow = null;
-      S.img = { a: S.uploaded.a, b: S.uploaded.b, width: S.uploaded.w, height: S.uploaded.h };
-      return;
-    }
-    S.flow = Flow.bind(S.field, S.size, S.size, S.disp);
-    S.img = Synth.generate({
-      width: S.size, height: S.size, flow: S.flow, maxDisp: S.disp,
-      nPerWindow: S.seed, dp: S.dp, noise: S.noise, loss: S.loss / 100,
-      seed: S.rngSeed
+  function pushControls() {
+    NUMS.forEach(function (p) {
+      $(p.range).value = S[p.key];
+      $(p.num).value = fmt(S[p.key], p.dec);
     });
+    PICKS.forEach(function (p) { $(p.id).value = S[p.key]; });
+    $('ovVectors').checked = S.ov.vectors;
+    $('ovTruth').checked = S.ov.truth;
+    $('ovError').checked = S.ov.error;
+    $('ovGrid').checked = S.ov.grid;
   }
 
-  /* A window that straddles a body wall only holds particles on one side, so
-   * its correlation is meaningless. Real PIV masks those out too: reject a
-   * window when a fifth of it falls inside the body. */
+  function setHint(id, text, level) {
+    var el = $(id);
+    el.textContent = text;
+    el.className = 'hint' + (level ? ' ' + level : '');
+  }
+
+  /* 유도값 힌트 — 이 값을 바꾸면 무엇이 따라 변하는지 즉시 보여 준다 */
+  function updateHints() {
+    var g = gridCount(), quarter = S.win / 4;
+
+    setHint('flowHint', t('fh.' + S.field));
+
+    if (S.disp <= quarter) {
+      setHint('dispHint', tf('h.disp', S.win, fmt(quarter, 1), fmt(quarter - S.disp, 1)));
+    } else {
+      setHint('dispHint', tf('h.disp.over', S.win, fmt(quarter, 1), fmt(S.disp - quarter, 1)),
+        S.disp > quarter * 1.4 ? 'bad' : 'warn');
+    }
+
+    var nI = seedInWindow();
+    setHint('seedHint', tf('h.seed', S.win, fmt(nI, 1)), nI < 4 ? 'bad' : (nI < 8 ? 'warn' : ''));
+    setHint('dpHint', S.dp >= 1.5 ? tf('h.dp', fmt(S.dp, 1)) : tf('h.dp.small', fmt(S.dp, 1)),
+      S.dp < 1.5 ? 'warn' : '');
+    setHint('noiseHint', tf('h.noise', fmt(S.noise * 2.55, 1)));
+    setHint('lossHint', tf('h.loss', fmt(S.loss, 0), fmt(1 - S.loss / 100, 2)));
+    setHint('sizeHint', tf('h.size', S.size, g.nx, g.ny));
+    setHint('winHint', tf('h.win', g.step, fmt(quarter, 1)));
+    setHint('overlapHint', tf('h.overlap', g.step, g.nx, g.ny));
+    setHint('passesHint', tf('h.passes',
+      PIV.schedule(g.W, g.H, S.win, S.passes).join(' → ')));
+    setHint('subpixHint', t('h.subpix.' + S.subpix));
+    setHint('threshHint', S.thresh > 100 ? t('h.thresh.off') : tf('h.thresh', fmt(S.thresh, 1)),
+      S.thresh > 100 ? 'warn' : '');
+    setHint('scaleHint', tf('h.scale', fmt(S.scale, 1)));
+  }
+
+  /* 접힌 그룹이 말하는 자기 상태 */
+  function updateStates() {
+    $('gsFlow').textContent = tf('gs.flow', t('f.' + S.field), fmt(S.disp, 1));
+    $('gsRec').textContent = tf('gs.rec', S.seed, fmt(S.dp, 1), S.loss);
+    $('gsProc').textContent = tf('gs.proc', S.win, Math.round(S.overlap * 100), S.passes);
+    $('gsView').textContent = tf('gs.view', t('bg.' + S.bg));
+    $('gsUpload').textContent = S.uploaded
+      ? tf('gs.upload.user', S.uploaded.w, S.uploaded.h)
+      : t('gs.upload.synth');
+  }
+
+  /* ---------- 경고 사슬 — 심각한 것 하나만 ---------- */
+
+  function updateWarn() {
+    var g = gridCount(), quarter = S.win / 4, cand = [];
+    var p98 = S.truth ? percentileSpeed(0.98) : (S.res ? percentileSpeed(0.98) : S.disp);
+
+    if (p98 > quarter) {
+      cand.push({
+        level: p98 > quarter * 1.4 ? 'bad' : 'caution',
+        t: t('w.quarter.t'),
+        b: tf('w.quarter.b', fmt(p98, 1), S.win, fmt(quarter, 1)),
+        f: tf('w.quarter.f', fmt(quarter, 1), nextWin())
+      });
+    }
+    var nI = seedInWindow();
+    if (!S.uploaded && nI < 8) {
+      cand.push({
+        level: nI < 4 ? 'bad' : 'caution',
+        t: t('w.seed.t'),
+        b: tf('w.seed.b', S.win, fmt(nI, 1)),
+        f: tf('w.seed.f', nextWin())
+      });
+    }
+    if (S.res) {
+      var m = summary();
+      if (m.validPct < 95) {
+        cand.push({
+          level: m.validPct < 85 ? 'bad' : 'caution',
+          t: t('w.valid.t'),
+          b: tf('w.valid.b', fmt(m.validPct, 1)),
+          f: tf('w.valid.f', S.loss, nextWin())
+        });
+      }
+      if (m.meanSnr < 1.5) {
+        cand.push({
+          level: m.meanSnr < 1.2 ? 'bad' : 'caution',
+          t: t('w.snr.t'),
+          b: tf('w.snr.b', fmt(m.meanSnr, 2)),
+          f: t('w.snr.f')
+        });
+      }
+    }
+    if (!S.uploaded && (S.dp < 1.5 || S.dp > 4)) {
+      cand.push({
+        level: 'caution', t: t('w.dp.t'),
+        b: tf('w.dp.b', fmt(S.dp, 1)), f: t('w.dp.f')
+      });
+    }
+
+    var box = $('pWarn');
+    if (!cand.length) { box.hidden = true; return; }
+    var pick = cand.filter(function (c) { return c.level === 'bad'; })[0] || cand[0];
+    box.hidden = false;
+    box.setAttribute('data-level', pick.level);
+    $('warnTitle').textContent = pick.t;
+    $('warnBody').textContent = pick.b;
+    $('warnFix').textContent = pick.f;
+  }
+
+  /* ---------- 파이프라인 ---------- */
+
   function maskedWindow(win) {
     if (!S.flow || !S.flow.def.mask) return null;
     var m = S.flow.masked, n = 5, h = win / 2;
@@ -137,27 +225,40 @@
           if (m(cx - h + (i + 0.5) * win / n, cy - h + (j + 0.5) * win / n)) hit++;
         }
       }
-      return hit >= n * n * 0.2;
+      return hit >= n * n * 0.2;    /* 창이 물체에 1/5 이상 걸치면 못 쓴다 */
     };
   }
 
+  function shoot() {
+    if (S.uploaded) {
+      S.flow = null;
+      S.img = { a: S.uploaded.a, b: S.uploaded.b, width: S.uploaded.w, height: S.uploaded.h };
+      return;
+    }
+    S.flow = Flow.bind(S.field, S.size, S.size, S.disp);
+    S.img = Synth.generate({
+      width: S.size, height: S.size, flow: S.flow, maxDisp: S.disp,
+      nPerWindow: S.seed, dp: S.dp, noise: S.noise, loss: S.loss / 100, seed: S.rngSeed
+    });
+  }
+
   function compute(animate) {
-    var cfg = {
+    S.cfg = {
       imgA: S.img.a, imgB: S.img.b, width: S.img.width, height: S.img.height,
-      win: S.win, overlap: S.overlap, passes: S.passes, subpix: S.subpix,
+      win: S.win, overlap: S.overlap, passes: S.passes,
       subpixel: S.subpix, threshold: S.thresh, snrMin: 1.2,
       masked: maskedWindow(S.win)
     };
-    S.cfg = cfg;
-    S.res = PIV.run(cfg);
+    S.res = PIV.run(S.cfg);
     S.der = PIV.derive(S.res);
     S.truth = S.flow ? PIV.truth(S.res, S.flow) : null;
+    S.speedRange = null;
     bgKey = '';
     if (S.picked >= S.res.nx * S.res.ny) S.picked = -1;
-    updateMetrics();
+    updateStats();
+    updateWarn();
     if (animate) startReveal(); else { reveal.n = S.res.nx * S.res.ny; draw(); }
-    if (S.picked < 0) autoPick();
-    else inspect(S.picked);
+    if (S.picked < 0) autoPick(); else inspect(S.picked);
   }
 
   function run(animate) {
@@ -165,44 +266,52 @@
     S.busy = true;
     var btn = $('runBtn');
     btn.disabled = true;
-    btn.textContent = I18N.t('run.busy');
-    veil(I18N.t('run.busy'));
-    /* let the veil paint before the synchronous correlation pass */
+    btn.textContent = t('run.busy');
+    veil(t('run.busy'));
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
         try {
-          readControls();
           shoot();
           compute(animate !== false);
         } finally {
           S.busy = false;
           btn.disabled = false;
-          btn.textContent = I18N.t('run.again');
+          btn.textContent = t('run.again');
           veil(null);
         }
       });
     });
   }
 
-  function veil(text) {
-    var v = $('veil');
-    if (text) { v.firstElementChild ? (v.firstElementChild.textContent = text) : (v.textContent = text); v.hidden = false; }
-    else v.hidden = true;
+  /* 슬라이더를 끄는 동안 계산이 따라오지 않게 잠깐 모은다.
+   * 힌트와 상태는 즉시 갱신하므로 반응은 느려지지 않는다. */
+  function schedule(act) {
+    clearTimeout(pending);
+    pending = setTimeout(function () {
+      if (act === 'shoot') run(false);
+      else if (act === 'run') { compute(false); }
+      else { bgKey = ''; draw(); }
+    }, act === 'draw' ? 0 : 130);
   }
 
-  /* ---------- reveal animation ------------------------------------------ */
+  function veil(text) {
+    var v = $('veil');
+    if (text) {
+      if (v.firstElementChild) v.firstElementChild.textContent = text;
+      v.hidden = false;
+    } else v.hidden = true;
+  }
+
   function startReveal() {
     var n = S.res.nx * S.res.ny;
     reveal.target = n; reveal.n = 0; reveal.t0 = 0;
     cancelAnimationFrame(reveal.raf);
     var reduce = root.matchMedia && root.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (reduce) { reveal.n = n; draw(); $('progress').style.width = '0'; return; }
-    var dur = 850;
-    function frame(t) {
-      if (!reveal.t0) reveal.t0 = t;
-      var p = Math.min(1, (t - reveal.t0) / dur);
-      var e = 1 - Math.pow(1 - p, 3);
-      reveal.n = Math.round(e * n);
+    function frame(ts) {
+      if (!reveal.t0) reveal.t0 = ts;
+      var p = Math.min(1, (ts - reveal.t0) / 850);
+      reveal.n = Math.round((1 - Math.pow(1 - p, 3)) * n);
       $('progress').style.width = (p < 1 ? (100 * p).toFixed(1) : 0) + '%';
       draw();
       if (p < 1) reveal.raf = requestAnimationFrame(frame);
@@ -210,174 +319,195 @@
     reveal.raf = requestAnimationFrame(frame);
   }
 
-  /* ---------- drawing ---------------------------------------------------- */
+  /* ---------- 그리기 ---------- */
 
   function fitCanvas() {
-    if (!S.img) return;
-    var W = S.img.width, H = S.img.height;
-    var cssW = $('sensor').clientWidth || 600;
+    if (!S.img) return 1;
+    var wrap = $('stageWrap');
+    var availW = Math.max(120, wrap.clientWidth - 28);
+    var availH = Math.max(120, wrap.clientHeight - 28);
+    var ar = S.img.width / S.img.height;
+    var w = availW, h = w / ar;
+    if (h > availH) { h = availH; w = h * ar; }
     var dpr = Math.min(2, root.devicePixelRatio || 1);
-    var bw = Math.max(320, Math.round(cssW * dpr));
-    if (stage.width !== bw || stage.height !== Math.round(bw * H / W)) {
-      stage.width = bw;
-      stage.height = Math.round(bw * H / W);
-    }
+    stage.style.width = Math.round(w) + 'px';
+    stage.style.height = Math.round(h) + 'px';
+    var bw = Math.round(w * dpr), bh = Math.round(h * dpr);
+    if (stage.width !== bw || stage.height !== bh) { stage.width = bw; stage.height = bh; }
+    return w;
   }
 
   function bgSpec() {
     var m = S.bg;
-    if (m === 'speed') return { arr: S.der.mag, ramp: 'speed', sym: false, label: 'legend.speed' };
-    if (m === 'vort') return { arr: S.der.vort, ramp: 'vorticity', sym: true, label: 'legend.vort' };
-    if (m === 'div') return { arr: S.der.div, ramp: 'vorticity', sym: true, label: 'legend.div' };
-    if (m === 'err' && S.truth) return { arr: S.truth.err, ramp: 'error', sym: false, label: 'legend.err' };
+    if (!S.der) return null;
+    if (m === 'speed') return { arr: S.der.mag, ramp: 'field', sym: false };
+    if (m === 'vort') return { arr: S.der.vort, ramp: 'diverging', sym: true };
+    if (m === 'div') return { arr: S.der.div, ramp: 'diverging', sym: true };
+    if (m === 'err' && S.truth) return { arr: S.truth.err, ramp: 'field', sym: false };
     return null;
   }
 
   function buildBackground() {
     var W = S.img.width, H = S.img.height;
     var spec = bgSpec();
-    var key = [S.bg, S.theme, W, H, S.res ? S.res.ms : 0, blink.phase].join('|');
+    var key = [S.bg, W, H, S.res ? S.res.ms : 0, blink.phase].join('|');
     if (key === bgKey) return;
     bgKey = key;
-    if (bgCanvas.width !== W || bgCanvas.height !== H) {
-      bgCanvas.width = W; bgCanvas.height = H;
-    }
+    if (bgCanvas.width !== W || bgCanvas.height !== H) { bgCanvas.width = W; bgCanvas.height = H; }
     var bctx = bgCanvas.getContext('2d');
     bctx.clearRect(0, 0, W, H);
     if (spec) {
-      var range = Color.niceRange(spec.arr, S.res.status, spec.sym);
-      S.range = range;
+      S.range = Color.niceRange(spec.arr, S.res.status, spec.sym);
+      S.floored = 0;
+      if (spec.sym) {
+        /* 와도·발산은 벡터장을 미분한 값이라 잡음이 그대로 증폭된다. 범위를
+         * 자동으로만 잡으면 참값이 0 인 장(퍼텐셜 유동)이 요란하게 보인다.
+         * 측정 잡음이 채울 수 있는 만큼을 하한으로 둔다. */
+        var floorV = noiseFloor();
+        if (S.range[1] < floorV) { S.range = [-floorV, floorV]; S.floored = floorV; }
+      }
       var mask = (S.flow && S.flow.def.mask) ? S.flow.masked : null;
       bctx.putImageData(
-        R.fieldImage(bctx, S.res, spec.arr, range, spec.ramp, S.theme, W, H, mask), 0, 0);
+        R.fieldImage(bctx, S.res, spec.arr, S.range, spec.ramp, W, H, mask), 0, 0);
     } else if (S.bg === 'pair') {
       bctx.putImageData(R.pairImage(bctx, S.img.a, S.img.b, W, H), 0, 0);
     } else {
       var src = (S.bg === 'blink' && blink.phase) ? S.img.b : S.img.a;
       bctx.putImageData(R.particleImage(bctx, src, W, H), 0, 0);
     }
-    updateRamp(spec);
+    updateLegend(spec);
   }
 
-  var ARROW_RAMP_LO = 0.34;   /* the darkest end of the ramp vanishes on the image */
-
-  function updateRamp(spec) {
-    var bar = $('rampBar'), ramp, range, label, lo = 0;
-    if (spec) {
-      ramp = spec.ramp; range = S.range; label = I18N.t(spec.label);
-      if (spec.sym && S.bg === 'vort') {
-        label += '  ' + I18N.t('legend.cw') + ' → ' + I18N.t('legend.ccw');
-      }
-    } else if (S.ov.vectors && S.res) {
-      /* arrows over the raw frames are coloured by speed — show that scale */
-      ramp = 'speed'; range = speedRange(); label = I18N.t('legend.speed');
-      lo = ARROW_RAMP_LO;
-    } else { bar.hidden = true; return; }
-    bar.hidden = false;
-    bar.className = spec ? 'bar' : 'bar on-sensor';
-    $('ramp').style.background = Color.gradient(ramp, spec ? S.theme : 'dark', 90, lo, 1);
-    var dec = Math.abs(range[1]) < 0.1 ? 3 : (Math.abs(range[1]) < 2 ? 2 : 1);
-    $('rampLo').textContent = fmt(range[0], dec);
-    $('rampHi').textContent = fmt(range[1], dec);
-    $('rampLabel').textContent = label;
+  /* 벡터장을 중앙차분하면 변위 오차 σ 가 √2·σ/간격 만큼 기울기 잡음이 된다.
+   * 그 여덟 배를 색 범위의 하한으로 쓴다 — 잡음만 있는 장은 옅게 남는다. */
+  function noiseFloor() {
+    var sigma = S.truth ? Math.max(0.05, S.truth.rms) : 0.1;
+    var f = 8 * sigma * Math.SQRT2 / S.res.step;
+    var dec = Math.pow(10, Math.floor(Math.log(f) / Math.LN10));
+    var m = f / dec;
+    return (m <= 1.2 ? 1.2 : m <= 2 ? 2 : m <= 3 ? 3 : m <= 5 ? 5 : 10) * dec;
   }
 
   function draw() {
     if (!S.img) return;
-    fitCanvas();
-    var W = S.img.width, H = S.img.height, k = stage.width / W;
+    var cssW = fitCanvas();
+    var W = S.img.width, k = stage.width / W;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, stage.width, stage.height);
+    ctx.fillStyle = cssVar('--bg') || '#fff';
+    ctx.fillRect(0, 0, stage.width, stage.height);
     buildBackground();
-    var onField = !!bgSpec();
-    if (onField) {
-      /* masked cells carry no data; let them read as empty panel, not as a hole */
-      ctx.fillStyle = cssVar('--sunken');
-      ctx.fillRect(0, 0, stage.width, stage.height);
-    }
+    var spec = bgSpec(), onField = !!spec;
     ctx.imageSmoothingEnabled = onField;
     ctx.drawImage(bgCanvas, 0, 0, stage.width, stage.height);
     ctx.setTransform(k, 0, 0, k, 0, 0);
-    /* The particle frames stay dark whatever the page theme is, so marks drawn
-     * on them take dark-theme colours; marks on a scalar field follow the page. */
-    var markTheme = onField ? S.theme : 'dark';
-    var inkOnImage = '#5BE9AC';
-    var truthColor = onField ? cssVar('--signal') : '#FFA362';
-    var rejectColor = onField ? cssVar('--bad') : '#FF7D66';
-    var showTruth = S.ov.truth && S.truth;
+
+    /* 바탕이 어두우냐 밝으냐로 마크 색을 고른다. viridis 는 대부분 어두우니
+     * 흰 화살표에 잉크 테를, 발산형과 반전한 입자영상은 밝으니 navy 화살표에
+     * 흰 테를 두른다. 강조색은 어느 쪽이든 하나다. */
+    var darkField = onField && spec.ramp === 'field';
+    var arrow = darkField ? '#ffffff' : cssVar('--c1');
+    var halo = darkField ? 'rgba(21,24,28,.55)' : 'rgba(255,255,255,.8)';
+    var truthColor = cssVar('--c2');
+    var reject = darkField ? '#ffd0c6' : cssVar('--bad');
 
     if (S.flow) {
-      R.body(ctx, S.flow,
-        onField ? cssVar('--sunken') : 'rgba(110,135,130,.30)',
-        onField ? cssVar('--line-2') : 'rgba(190,225,215,.70)');
+      R.body(ctx, S.flow, onField ? cssVar('--glass2') : 'rgba(116,127,142,.16)',
+        darkField ? 'rgba(255,255,255,.55)' : 'rgba(88,99,114,.45)');
     }
     if (S.ov.grid && S.res) {
-      R.grid(ctx, S.res, onField ? 'rgba(20,30,30,.22)' : 'rgba(150,200,190,.28)', 0.8 / k * 1.2);
+      R.grid(ctx, S.res, darkField ? 'rgba(255,255,255,.35)' : 'rgba(88,99,114,.26)', 0.9 / k);
     }
     if (!S.res) return;
 
     var s = arrowScale();
+    var showTruth = S.ov.truth && S.truth;
     if (showTruth) {
-      /* a wide band under the measured arrow: where the two agree the band sits
-       * symmetrically around it, where they differ it sticks out */
-      R.truthVectors(ctx, S.res, S.truth, {
-        scale: s, color: truthColor, lineWidth: 3.6 / k, alpha: .95
-      });
+      R.truthVectors(ctx, S.res, S.truth, { scale: s, color: truthColor, lineWidth: 3.6 / k, alpha: .95 });
     }
     if (S.ov.vectors) {
       R.vectors(ctx, S.res, {
-        scale: s, limit: reveal.n, lineWidth: 1.15 / k,
-        ramp: onField ? null : 'speed', range: speedRange(), theme: markTheme,
-        rampLo: ARROW_RAMP_LO,
-        color: onField ? cssVar('--ink') : inkOnImage,
-        halo: showTruth ? null : (onField ? 'rgba(255,255,255,.55)' : 'rgba(0,0,0,.6)'),
-        showRejected: true, rejectedColor: rejectColor
+        scale: s, limit: reveal.n, lineWidth: 1.2 / k,
+        color: arrow, halo: showTruth ? null : halo,
+        showRejected: true, rejectedColor: reject
       });
     }
     if (S.ov.error && S.truth) {
       R.errorVectors(ctx, S.res, S.truth, { scale: s * 10, color: truthColor, lineWidth: 1.3 / k });
     }
 
-    /* the window being correlated right now, and the one under inspection */
     if (reveal.n < reveal.target && reveal.n > 0) {
       var kk = Math.min(reveal.n, reveal.target - 1);
       var i = kk % S.res.nx, j = (kk - i) / S.res.nx;
-      R.windowMarker(ctx, S.res.xs[i], S.res.ys[j], S.res.win, inkOnImage, 1.6 / k);
+      R.windowMarker(ctx, S.res.xs[i], S.res.ys[j], S.res.win, cssVar('--accent'), 1.6 / k);
     }
     if (S.picked >= 0) {
       var pi = S.picked % S.res.nx, pj = (S.picked - pi) / S.res.nx;
       R.windowMarker(ctx, S.res.xs[pi], S.res.ys[pj], S.res.win,
-        onField ? cssVar('--ink') : '#FFFFFF', 1.8 / k);
+        cssVar('--accent'), 1.8 / k, 'rgba(255,255,255,.8)');
     }
+    updateScaleBar(cssW);
   }
 
   function speedRange() {
     if (!S.der) return [0, 1];
-    if (!S.speedRange || S.speedKey !== S.res.ms) {
-      S.speedRange = Color.niceRange(S.der.mag, S.res.status, false);
-      S.speedKey = S.res.ms;
-    }
+    if (!S.speedRange) S.speedRange = Color.niceRange(S.der.mag, S.res.status, false);
     return S.speedRange;
   }
 
-  /* Arrow length: 1.0 means the largest vector spans one window spacing. */
+  /* 화살표 길이 1.0 = 가장 긴 벡터가 격자 간격만큼 */
   function arrowScale() {
-    var r = speedRange();
-    var ref = Math.max(0.3, r[1]);
-    return S.arrow * (S.res.step * 0.95) / ref;
+    return S.scale * (S.res.step * 0.95) / Math.max(0.3, speedRange()[1]);
   }
 
-  /* ---------- inspector -------------------------------------------------- */
+  /* ---------- 범례 ---------- */
 
-  /* Open the inspector on a window worth looking at: away from the border,
-   * moving well, and with the strongest correlation among those. Picking the
-   * single fastest vector tends to land on the oddest one in the field. */
+  function updateLegend(spec) {
+    var bar = $('rampBar');
+    if (spec) {
+      bar.hidden = false;
+      $('ramp').style.background = Color.gradient(spec.ramp, 90);
+      var dec = Math.abs(S.range[1]) < 0.1 ? 3 : (Math.abs(S.range[1]) < 2 ? 2 : 1);
+      $('rampLo').textContent = fmt(S.range[0], dec);
+      $('rampHi').textContent = fmt(S.range[1], dec);
+    } else bar.hidden = true;
+    $('legendCap').textContent = t('lc.' + S.bg) +
+      (S.floored ? ' ' + tf('lc.floored', fmt(S.floored, 3)) : '');
+    /* 열쇠는 화면에 실제로 그려진 색으로 — viridis 위에서는 흰 화살표다 */
+    var darkField = !!(spec && spec.ramp === 'field');
+    key('keyMeas', darkField ? '#ffffff' : 'var(--c1)', darkField);
+    key('keyRej', darkField ? '#ffd0c6' : 'var(--bad)', darkField);
+    key('keyTruth', 'var(--c2)', false);
+    $('keyMeas').hidden = !S.ov.vectors;
+    $('keyTruth').hidden = !(S.ov.truth && S.truth);
+    $('keyRej').hidden = !S.ov.vectors;
+    $('keyScale').hidden = !S.ov.vectors || !S.res;
+  }
+
+  function key(id, color, outlined) {
+    var el = $(id);
+    el.style.color = color;
+    el.firstElementChild.style.boxShadow = outlined ? '0 0 0 1px rgba(21,24,28,.55)' : 'none';
+  }
+
+  /* 화살표 길이의 기준자 — 보기 좋은 수를 골라 그 길이만큼 선을 긋는다 */
+  function updateScaleBar(cssW) {
+    if (!S.res || !S.ov.vectors) return;
+    var perDisp = arrowScale() * (cssW / S.img.width);   /* 화면 px / 변위 px */
+    var nice = [0.5, 1, 2, 5, 10, 20], pick = nice[0];
+    for (var i = 0; i < nice.length; i++) {
+      pick = nice[i];
+      if (nice[i] * perDisp >= 22) break;
+    }
+    $('scaleTick').style.width = Math.max(10, Math.min(90, pick * perDisp)).toFixed(0) + 'px';
+    $('scaleText').textContent = tf('legend.scale', pick);
+  }
+
+  /* ---------- 상관 현미경 ---------- */
+
   function autoPick() {
     if (!S.res) return;
     var res = S.res, n = res.nx * res.ny, k, speeds = [];
-    for (k = 0; k < n; k++) {
-      if (res.status[k] === 0) speeds.push(Math.hypot(res.u[k], res.v[k]));
-    }
+    for (k = 0; k < n; k++) if (res.status[k] === 0) speeds.push(Math.hypot(res.u[k], res.v[k]));
     if (!speeds.length) return;
     speeds.sort(function (a, b) { return a - b; });
     var floor = speeds[Math.floor(speeds.length * 0.6)];
@@ -407,20 +537,18 @@
   function drawInspector() {
     var ins = S.insp;
     if (!ins) return;
-    R.zoom($('winA'), ins.a, ins.win, true);
-    R.zoom($('winB'), ins.b, ins.win, true);
+    R.zoom($('winA'), ins.a, ins.win);
+    R.zoom($('winB'), ins.b, ins.win);
     var half = Math.min(ins.limit, S.corrMode === '3d' ? 12 : 10);
-    var ink = cssVar('--laser'), sig = cssVar('--signal');
-    if (S.corrMode === '3d') R.corrSurface($('corr'), ins, half, S.theme, ink, sig);
-    else R.corrMap($('corr'), ins, half, S.theme, '#FFFFFF');
+    if (S.corrMode === '3d') R.corrSurface($('corr'), ins, half, cssVar('--text'));
+    else R.corrMap($('corr'), ins, half);
 
     var k = S.picked;
     $('rPos').textContent = Math.round(ins.cx) + ', ' + Math.round(ins.cy) + ' px';
     $('rMeas').textContent = fmt(ins.u, 3) + ', ' + fmt(ins.v, 3) + ' px';
     if (S.truth) {
       $('rTruth').textContent = fmt(S.truth.tu[k], 3) + ', ' + fmt(S.truth.tv[k], 3) + ' px';
-      var ex = ins.u - S.truth.tu[k], ey = ins.v - S.truth.tv[k];
-      $('rErr').textContent = fmt(Math.hypot(ex, ey), 3) + ' px';
+      $('rErr').textContent = fmt(Math.hypot(ins.u - S.truth.tu[k], ins.v - S.truth.tv[k]), 3) + ' px';
     } else {
       $('rTruth').textContent = '—';
       $('rErr').textContent = '—';
@@ -429,10 +557,9 @@
     $('rShift').textContent = ins.shiftX + ', ' + ins.shiftY + ' px';
     $('rPeak').textContent = fmt(ins.peak.peak, 3);
     $('rSnr').textContent = fmt(ins.peak.snr, 2);
-    var st = S.res.status[k];
-    var v = $('rStatus');
+    var st = S.res.status[k], v = $('rStatus');
     v.setAttribute('data-st', st);
-    v.textContent = I18N.t(st === 0 ? 'st.ok' : st === 1 ? 'st.outlier' : st === 2 ? 'st.masked' : 'st.weak');
+    v.textContent = t(st === 0 ? 'st.ok' : st === 1 ? 'st.outlier' : st === 2 ? 'st.masked' : 'st.weak');
   }
 
   function pickAt(clientX, clientY) {
@@ -447,89 +574,24 @@
     inspect(j * S.res.nx + i);
   }
 
-  /* ---------- metrics & diagnostics -------------------------------------- */
+  /* ---------- 측정 요약 ---------- */
 
-  function updateMetrics() {
+  function summary() {
     var res = S.res, n = res.nx * res.ny;
-    var valid = 0, masked = 0, rejected = 0, weak = 0, peakSum = 0, snrSum = 0, cnt = 0;
+    var valid = 0, masked = 0, peakSum = 0, snrSum = 0, cnt = 0;
     for (var k = 0; k < n; k++) {
-      var st = res.status[k];
-      if (st === 2) { masked++; continue; }
+      if (res.status[k] === 2) { masked++; continue; }
       cnt++;
       peakSum += res.corr[k];
       snrSum += Math.min(20, res.snr[k]);
-      if (st === 0) valid++; else if (st === 1) rejected++; else weak++;
+      if (res.status[k] === 0) valid++;
     }
-    var meanPeak = cnt ? peakSum / cnt : 0, meanSnr = cnt ? snrSum / cnt : 0;
-    var validPct = cnt ? 100 * valid / cnt : 0;
-
-    var hero = $('rmsVal'), frac = $('rmsFraction');
-    var heroCap = document.querySelector('.hero .cap');
-    if (S.truth) {
-      heroCap.textContent = I18N.t('m.rms');
-      hero.innerHTML = fmt(S.truth.rms, 3) + '<small> ' + I18N.t('m.rms.px') + '</small>';
-      var inv = S.truth.rms > 0 ? Math.round(1 / S.truth.rms) : 0;
-      frac.innerHTML = I18N.t('m.subpx') + ' — ' + I18N.t('m.subpx.sub') + ' <b>1/' + inv + '</b>';
-      document.querySelector('.hero .sub').textContent = I18N.t('m.rms.sub');
-    } else {
-      heroCap.textContent = I18N.t('m.peak');
-      hero.innerHTML = fmt(meanPeak, 3);
-      frac.textContent = '';
-      document.querySelector('.hero .sub').textContent = I18N.t('upload.hint');
-    }
-
-    $('stVectors').textContent = res.nx + ' × ' + res.ny + ' = ' + (n - masked);
-    $('stValid').textContent = fmt(validPct, 1) + ' %';
-    $('stPeak').textContent = fmt(meanPeak, 3);
-    $('stBias').textContent = S.truth
-      ? fmt(S.truth.biasX, 3) + ', ' + fmt(S.truth.biasY, 3) + ' px' : '—';
-    $('stMax').textContent = S.truth ? fmt(S.truth.max, 2) + ' px' : '—';
-    $('stPasses').textContent = res.passes.map(function (p) { return p.win; }).join(' → ') + ' px';
-    $('stTime').textContent = Math.round(res.ms) + ' ms';
-
-    syncKeys();
-
-    /* --- health checks --- */
-    var rows = [];
-    var nI = S.uploaded ? null : S.seed * Math.pow(S.win / 32, 2);
-    if (nI !== null) {
-      rows.push(chk('diag.seed', nI >= 8 ? 'ok' : nI >= 4 ? 'warn' : 'bad',
-        fmt(nI, 1) + (I18N.lang === 'ko' ? ' 개' : ''),
-        nI >= 8 ? 'diag.seed.ok' : 'diag.seed.warn'));
-    }
-    var p98 = percentileSpeed(0.98);
-    var q = p98 / (S.win / 4);
-    rows.push(chk('diag.quarter', q <= 1 ? 'ok' : q <= 1.4 ? 'warn' : 'bad',
-      fmt(p98, 1) + ' / ' + fmt(S.win / 4, 1) + ' px',
-      q <= 1 ? 'diag.quarter.ok' : 'diag.quarter.warn'));
-    if (!S.uploaded) {
-      rows.push(chk('diag.dp', (S.dp >= 1.8 && S.dp <= 3.6) ? 'ok' : (S.dp >= 1.4 ? 'warn' : 'bad'),
-        fmt(S.dp, 1) + ' px', (S.dp >= 1.8 && S.dp <= 3.6) ? 'diag.dp.ok' : 'diag.dp.warn'));
-    }
-    rows.push(chk('diag.snr', meanSnr >= 1.5 ? 'ok' : meanSnr >= 1.2 ? 'warn' : 'bad',
-      fmt(meanSnr, 2), meanSnr >= 1.5 ? 'diag.snr.ok' : 'diag.snr.warn'));
-    rows.push(chk('diag.valid', validPct >= 95 ? 'ok' : validPct >= 85 ? 'warn' : 'bad',
-      fmt(validPct, 1) + ' %', validPct >= 95 ? 'diag.valid.ok' : 'diag.valid.warn'));
-    $('diags').innerHTML = rows.join('');
-  }
-
-  /* the legend names only what is on screen, in the colour it was drawn in */
-  function syncKeys() {
-    var onField = !!(S.res && bgSpec());
-    var rampColoured = S.ov.vectors && !onField;
-    $('keyMeas').hidden = !S.ov.vectors || rampColoured;
-    $('keyMeas').style.color = onField ? 'var(--ink)' : '#5BE9AC';
-    $('keyTruth').hidden = !(S.ov.truth && S.truth);
-    $('keyTruth').style.color = onField ? 'var(--signal)' : '#FFA362';
-    $('keyRej').style.color = onField ? 'var(--bad)' : '#FF7D66';
-  }
-
-  function chk(labelKey, level, value, noteKey) {
-    var mark = level === 'ok' ? '✓' : level === 'warn' ? '!' : '✕';
-    return '<div class="diag" data-level="' + level + '">' +
-      '<span class="mark">' + mark + '</span>' +
-      '<span class="what">' + I18N.t(labelKey) + '<em>' + I18N.t(noteKey) + '</em></span>' +
-      '<span class="num">' + value + '</span></div>';
+    return {
+      n: n, masked: masked, cnt: cnt,
+      meanPeak: cnt ? peakSum / cnt : 0,
+      meanSnr: cnt ? snrSum / cnt : 0,
+      validPct: cnt ? 100 * valid / cnt : 0
+    };
   }
 
   function percentileSpeed(p) {
@@ -539,53 +601,59 @@
         if (S.res.status[k] === 2) continue;
         v.push(Math.hypot(S.truth.tu[k], S.truth.tv[k]));
       }
-    } else {
+    } else if (S.der) {
       for (k = 0; k < S.der.mag.length; k++) {
         if (S.res.status[k] === 2) continue;
         v.push(S.der.mag[k]);
       }
     }
-    if (!v.length) return 0;
+    if (!v.length) return S.disp;
     v.sort(function (a, b) { return a - b; });
     return v[Math.min(v.length - 1, Math.floor(v.length * p))];
   }
 
-  /* ---------- story steps ------------------------------------------------ */
+  function updateStats() {
+    var res = S.res, m = summary();
+    if (S.truth) {
+      $('heroCap').textContent = t('m.rms');
+      $('heroVal').textContent = fmt(S.truth.rms, 3) + ' px';
+      $('stSubpx').textContent = S.truth.rms > 0
+        ? tf('m.subpxv', Math.round(1 / S.truth.rms)) : '—';
+    } else {
+      $('heroCap').textContent = t('m.peakcap');
+      $('heroVal').textContent = fmt(m.meanPeak, 3);
+      $('stSubpx').textContent = '—';
+    }
+    $('stVectors').textContent = res.nx + '×' + res.ny + ' = ' + (m.n - m.masked);
+    $('stValid').textContent = fmt(m.validPct, 1) + ' %';
+    $('stPeak').textContent = fmt(m.meanPeak, 3);
+    $('stBias').textContent = S.truth
+      ? fmt(S.truth.biasX, 3) + ', ' + fmt(S.truth.biasY, 3) + ' px' : '—';
+    $('stPasses').textContent = res.passes.map(function (p) { return p.win; }).join(' → ') + ' px';
+    $('stTime').textContent = Math.round(res.ms) + ' ms';
+  }
+
+  /* ---------- 단계 ---------- */
 
   function setStep(n) {
     S.step = n;
-    var btns = document.querySelectorAll('.step');
+    var btns = $('stepSeg').children;
     for (var i = 0; i < btns.length; i++) {
-      btns[i].setAttribute('aria-current', String(+btns[i].getAttribute('data-step') === n));
+      btns[i].className = (+btns[i].getAttribute('data-step') === n) ? 'on' : '';
     }
-    if (n === 1) {
-      $('bgSelect').value = 'a';
-      $('ovVectors').checked = false; $('ovGrid').checked = false;
-      $('ovTruth').checked = false; $('ovError').checked = false;
-    } else if (n === 2) {
-      $('bgSelect').value = 'blink';
-      $('ovVectors').checked = false; $('ovGrid').checked = false;
-    } else if (n === 3) {
-      $('bgSelect').value = 'a';
-      $('ovVectors').checked = false; $('ovGrid').checked = true;
-    } else if (n === 4) {
-      $('bgSelect').value = 'speed';
-      $('ovVectors').checked = true; $('ovGrid').checked = false;
-    }
-    readControls();
+    $('headHint').textContent = n ? t('step.' + n + '.d') : '';
+    if (n === 1) { S.bg = 'a'; S.ov.vectors = false; S.ov.grid = false; S.ov.truth = false; }
+    else if (n === 2) { S.bg = 'blink'; S.ov.vectors = false; S.ov.grid = false; }
+    else if (n === 3) { S.bg = 'a'; S.ov.vectors = false; S.ov.grid = true; }
+    else if (n === 4) { S.bg = 'speed'; S.ov.vectors = true; S.ov.grid = false; }
+    pushControls();
+    updateStates();
     updateBlink();
-    if (n === 3 && S.res) {
-      var mid = Math.floor(S.res.ny / 2) * S.res.nx + Math.floor(S.res.nx / 2);
-      inspect(S.picked >= 0 ? S.picked : mid);
-      var el = document.querySelector('.inspector');
-      if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    }
-    if (n === 4 && S.res) startReveal();
-    draw();
-    $('stageHint').textContent = I18N.t(n === 2 ? 'stage.blink' : 'stage.hint');
+    bgKey = '';
+    if (n === 3 && S.res && S.picked < 0) autoPick();
+    if (n === 4 && S.res) startReveal(); else draw();
   }
 
-  /* ---------- blink ------------------------------------------------------ */
   function updateBlink() {
     var want = S.bg === 'blink';
     if (want === blink.on) return;
@@ -593,28 +661,25 @@
     cancelAnimationFrame(blink.raf);
     if (!want) { blink.phase = 0; bgKey = ''; draw(); return; }
     var last = 0;
-    function frame(t) {
-      if (!last) last = t;
-      if (t - last > 420) { last = t; blink.phase ^= 1; draw(); }
+    function frame(ts) {
+      if (!last) last = ts;
+      if (ts - last > 420) { last = ts; blink.phase ^= 1; bgKey = ''; draw(); }
       if (blink.on) blink.raf = requestAnimationFrame(frame);
     }
     blink.raf = requestAnimationFrame(frame);
   }
 
-  /* ---------- upload ----------------------------------------------------- */
+  /* ---------- 내 영상 ---------- */
 
   function loadFile(file, which) {
-    var img = new Image();
-    var url = URL.createObjectURL(file);
+    var img = new Image(), url = URL.createObjectURL(file);
     img.onload = function () {
-      var cap = 640;
-      var sc = Math.min(1, cap / Math.max(img.naturalWidth, img.naturalHeight));
+      var sc = Math.min(1, 640 / Math.max(img.naturalWidth, img.naturalHeight));
       var w = Math.max(64, Math.round(img.naturalWidth * sc));
       var h = Math.max(64, Math.round(img.naturalHeight * sc));
       var c = R.offscreen(w, h), cc = c.getContext('2d');
       cc.drawImage(img, 0, 0, w, h);
-      var d = cc.getImageData(0, 0, w, h);
-      var rec = { g: Synth.fromImageData(d), w: w, h: h };
+      var rec = { g: Synth.fromImageData(cc.getImageData(0, 0, w, h)), w: w, h: h };
       if (which === 'a') S.pendingA = rec; else S.pendingB = rec;
       URL.revokeObjectURL(url);
       tryUploaded();
@@ -625,29 +690,26 @@
 
   function tryUploaded() {
     if (!S.pendingA || !S.pendingB) return;
-    var A = S.pendingA, B = S.pendingB, note = '';
-    var w = A.w, h = A.h, b = B.g;
+    var A = S.pendingA, B = S.pendingB, w = A.w, h = A.h, b = B.g, note = '';
     if (B.w !== w || B.h !== h) {
       var out = new Float32Array(w * h);
       for (var j = 0; j < h; j++) {
-        for (var i = 0; i < w; i++) {
-          out[j * w + i] = (i < B.w && j < B.h) ? B.g[j * B.w + i] : 0;
-        }
+        for (var i = 0; i < w; i++) out[j * w + i] = (i < B.w && j < B.h) ? B.g[j * B.w + i] : 0;
       }
-      b = out;
-      note = 'upload.size';
+      b = out; note = 'upload.size';
     }
     S.uploaded = { a: A.g, b: b, w: w, h: h };
     S.picked = -1;
     if (note) toast(note);
+    updateStates(); updateHints();
     run(true);
   }
 
   function toast(key, raw) {
-    var t = $('toast');
-    t.textContent = raw || I18N.t(key);
+    var el = $('toast');
+    el.textContent = raw || t(key);
     if (toast.timer) clearTimeout(toast.timer);
-    toast.timer = setTimeout(function () { t.textContent = ''; }, 4000);
+    toast.timer = setTimeout(function () { el.textContent = ''; }, 4000);
   }
 
   function csv() {
@@ -655,52 +717,80 @@
     for (var j = 0; j < res.ny; j++) {
       for (var i = 0; i < res.nx; i++) {
         var k = j * res.nx + i;
-        lines.push([
-          res.xs[i].toFixed(1), res.ys[j].toFixed(1),
-          res.u[k].toFixed(4), res.v[k].toFixed(4),
-          res.corr[k].toFixed(4), Math.min(99, res.snr[k]).toFixed(2),
-          res.status[k]
-        ].join(','));
+        lines.push([res.xs[i].toFixed(1), res.ys[j].toFixed(1),
+          res.u[k].toFixed(4), res.v[k].toFixed(4), res.corr[k].toFixed(4),
+          Math.min(99, res.snr[k]).toFixed(2), res.status[k]].join(','));
       }
     }
     return lines.join('\n');
   }
 
-  /* ---------- wiring ----------------------------------------------------- */
+  function showDump(text) {
+    var d = $('dump');
+    d.value = text; d.hidden = false; d.select();
+    $('gUpload').open = true;
+    toast('copy.fail');
+  }
+
+  /* ---------- 배선 ---------- */
 
   function applyLang(next) {
     I18N.apply(next);
+    document.title = t('doc.title');
     buildFlowSelect();
-    syncLabels();
-    $('langBtn').textContent = I18N.t('app.langLabel');
-    $('runBtn').textContent = I18N.t(S.res ? 'run.again' : 'run');
-    $('stageHint').textContent = I18N.t(S.step === 2 ? 'stage.blink' : 'stage.hint');
-    if (S.res) { updateMetrics(); drawInspector(); bgKey = ''; draw(); }
-    store('lang', I18N.lang);
+    pushControls();
+    updateHints(); updateStates();
+    $('headHint').textContent = S.step ? t('step.' + S.step + '.d') : '';
+    $('runBtn').textContent = t(S.res ? 'run.again' : 'run');
+    var lb = $('langSeg').children;
+    for (var i = 0; i < lb.length; i++) {
+      lb[i].className = lb[i].getAttribute('data-lang') === I18N.lang ? 'on' : '';
+    }
+    if (S.res) { updateStats(); updateWarn(); drawInspector(); bgKey = ''; draw(); }
+    try { localStorage.setItem('piv.lang', I18N.lang); } catch (e) { /* 사생활 보호 모드 */ }
+  }
+
+  function afterChange(act) {
+    updateHints();
+    updateStates();
+    updateWarn();
+    if (act === 'draw') updateBlink();
+    schedule(act);
   }
 
   function bind() {
-    var reshootIds = ['flowKind', 'dispRange', 'seedRange', 'dpRange', 'noiseRange', 'lossRange', 'sizeSelect'];
-    var recomputeIds = ['winSelect', 'overlapSelect', 'passesSelect', 'subpixSelect', 'threshSelect'];
-    var redrawIds = ['bgSelect', 'scaleRange', 'ovVectors', 'ovTruth', 'ovError', 'ovGrid'];
-
-    reshootIds.forEach(function (id) {
-      $(id).addEventListener('input', function () {
-        readControls();
-        if (S.uploaded && id !== 'flowKind') return;
-        S.uploaded = null; S.pendingA = S.pendingB = null;
-        run(false);
+    NUMS.forEach(function (p) {
+      var r = $(p.range), n = $(p.num);
+      r.addEventListener('input', function () {
+        S[p.key] = +r.value;
+        n.value = fmt(S[p.key], p.dec);
+        afterChange(p.act);
+      });
+      n.addEventListener('change', function () {
+        var v = +n.value;
+        if (!isFinite(v)) { n.value = fmt(S[p.key], p.dec); return; }
+        v = Math.max(+r.min, Math.min(+r.max, v));
+        S[p.key] = v;
+        r.value = v;
+        n.value = fmt(v, p.dec);
+        afterChange(p.act);
       });
     });
-    recomputeIds.forEach(function (id) {
-      $(id).addEventListener('input', function () { readControls(); run(false); });
+
+    PICKS.forEach(function (p) {
+      $(p.id).addEventListener('change', function () {
+        S[p.key] = p.str ? this.value : +this.value;
+        if (p.key === 'field' || p.key === 'size') {
+          S.uploaded = null; S.pendingA = S.pendingB = null;
+        }
+        afterChange(p.act);
+      });
     });
-    redrawIds.forEach(function (id) {
-      $(id).addEventListener('input', function () {
-        readControls();
-        updateBlink();
+
+    ['ovVectors', 'ovTruth', 'ovError', 'ovGrid'].forEach(function (id) {
+      $(id).addEventListener('change', function () {
+        S.ov[id.slice(2).toLowerCase()] = this.checked;   /* ovTruth -> truth */
         bgKey = '';
-        syncKeys();
         draw();
       });
     });
@@ -710,49 +800,48 @@
       S.rngSeed = (Math.random() * 1e9) | 0;
       S.uploaded = null; S.pendingA = S.pendingB = null;
       $('fileA').value = ''; $('fileB').value = '';
+      updateStates();
       run(true);
     });
+    $('copyCsv').addEventListener('click', function () {
+      if (!S.res) return;
+      var text = csv();
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () { toast('copy.done'); },
+          function () { showDump(text); });
+      } else showDump(text);
+    });
 
-    var steps = document.querySelectorAll('.step');
-    for (var i = 0; i < steps.length; i++) {
-      steps[i].addEventListener('click', function () {
-        setStep(+this.getAttribute('data-step'));
-      });
-    }
+    $('stepSeg').addEventListener('click', function (e) {
+      var b = e.target.closest('button[data-step]');
+      if (b) setStep(+b.getAttribute('data-step'));
+    });
+    $('langSeg').addEventListener('click', function (e) {
+      var b = e.target.closest('button[data-lang]');
+      if (b) applyLang(b.getAttribute('data-lang'));
+    });
+    $('corrSeg').addEventListener('click', function (e) {
+      var b = e.target.closest('button[data-mode]');
+      if (!b) return;
+      S.corrMode = b.getAttribute('data-mode');
+      var kids = this.children;
+      for (var i = 0; i < kids.length; i++) kids[i].className = kids[i] === b ? 'on' : '';
+      drawInspector();
+    });
 
-    $('sensor').addEventListener('click', function (e) { pickAt(e.clientX, e.clientY); });
-    $('sensor').setAttribute('tabindex', '0');
-    $('sensor').addEventListener('keydown', function (e) {
+    var wrap = $('stageWrap');
+    wrap.addEventListener('click', function (e) { pickAt(e.clientX, e.clientY); });
+    wrap.setAttribute('tabindex', '0');
+    wrap.addEventListener('keydown', function (e) {
       if (!S.res) return;
       var d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
       if (!d) return;
       e.preventDefault();
       var k = S.picked < 0 ? 0 : S.picked;
-      var i2 = k % S.res.nx, j2 = (k - i2) / S.res.nx;
-      i2 = Math.max(0, Math.min(S.res.nx - 1, i2 + d[0]));
-      j2 = Math.max(0, Math.min(S.res.ny - 1, j2 + d[1]));
-      inspect(j2 * S.res.nx + i2);
-    });
-
-    var modes = document.querySelectorAll('input[name="corrMode"]');
-    for (i = 0; i < modes.length; i++) {
-      modes[i].addEventListener('change', function () {
-        S.corrMode = this.value;
-        drawInspector();
-      });
-    }
-
-    $('langBtn').addEventListener('click', function () {
-      applyLang(I18N.lang === 'ko' ? 'en' : 'ko');
-    });
-    $('themeBtn').addEventListener('click', function () {
-      S.themeMode = S.themeMode === 'auto'
-        ? (S.theme === 'dark' ? 'light' : 'dark')
-        : (S.themeMode === 'dark' ? 'light' : 'dark');
-      resolveTheme();
-      store('theme', S.themeMode);
-      bgKey = '';
-      draw(); drawInspector();
+      var i = k % S.res.nx, j = (k - i) / S.res.nx;
+      i = Math.max(0, Math.min(S.res.nx - 1, i + d[0]));
+      j = Math.max(0, Math.min(S.res.ny - 1, j + d[1]));
+      inspect(j * S.res.nx + i);
     });
 
     $('fileA').addEventListener('change', function () {
@@ -765,23 +854,9 @@
       S.uploaded = null; S.pendingA = S.pendingB = null;
       $('fileA').value = ''; $('fileB').value = '';
       $('dump').hidden = true;
+      updateStates(); updateHints();
       run(true);
     });
-    $('copyCsv').addEventListener('click', function () {
-      if (!S.res) return;
-      var text = csv();
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(function () { toast('copy.done'); },
-          function () { showDump(text); });
-      } else showDump(text);
-    });
-
-    var mq = root.matchMedia && root.matchMedia('(prefers-color-scheme: dark)');
-    if (mq && mq.addEventListener) {
-      mq.addEventListener('change', function () {
-        if (S.themeMode === 'auto') { resolveTheme(); bgKey = ''; draw(); drawInspector(); }
-      });
-    }
 
     var rt;
     root.addEventListener('resize', function () {
@@ -790,32 +865,22 @@
     });
   }
 
-  function showDump(text) {
-    var d = $('dump');
-    d.value = text;
-    d.hidden = false;
-    d.select();
-    toast('copy.fail');
-  }
-
-  /* ---------- boot ------------------------------------------------------- */
+  /* ---------- 시작 ---------- */
 
   function init() {
-    var savedTheme = store('theme');
-    if (savedTheme === 'light' || savedTheme === 'dark') S.themeMode = savedTheme;
-    resolveTheme();
-    var savedLang = store('lang');
-    applyLang(savedLang === 'en' ? 'en' : 'ko');
+    var saved = null;
+    try { saved = localStorage.getItem('piv.lang'); } catch (e) { /* 무시 */ }
+    applyLang(saved === 'en' ? 'en' : 'ko');
     bind();
-    readControls();
+    pushControls();
+    updateHints();
+    updateStates();
     shoot();
     compute(true);
     veil(null);
-    setStep(0);
-    $('runBtn').textContent = I18N.t('run.again');
+    $('runBtn').textContent = t('run.again');
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else init();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
 })(typeof globalThis !== 'undefined' ? globalThis : this);

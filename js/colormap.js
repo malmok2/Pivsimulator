@@ -1,32 +1,21 @@
-/* PIV Simulator — colour ramps.
+/* PIV Simulator — 색 램프.
  *
- * Three jobs, three kinds of ramp:
- *   speed / error  -> sequential, one hue family, monotone in lightness
- *   vorticity      -> diverging, two hues with a neutral midpoint at zero
- *   correlation    -> sequential dark-to-bright instrument readout
- * Each ramp has a light-theme and a dark-theme instance; the dark one is
- * chosen against the dark surface, not flipped automatically.
+ * 디자인 지침대로 스칼라장은 viridis 하나로 통일한다(명도가 단조로워
+ * 흑백 인쇄와 색맹에서도 순서가 유지된다). 무지개(jet)는 쓰지 않는다.
+ * 부호가 있는 장(와도·발산)만 발산형으로, 두 끝을 차트 계열색 --c1(navy)과
+ * --c6(brick)에 맞추고 가운데는 바탕에 가까운 중성색을 둔다.
+ * 단일 라이트 테마이므로 테마별 변종이 없다.
  */
 (function (root) {
   'use strict';
 
   var RAMPS = {
-    speed: {
-      light: ['#F1F6F3', '#C3E1D5', '#84C6B0', '#41A085', '#177661', '#0A4239'],
-      dark: ['#07231F', '#0D4B3F', '#177E67', '#37AF8C', '#7ED6B6', '#DCF4E8']
-    },
-    error: {
-      light: ['#FBF4EF', '#F3D8C2', '#E8A578', '#D06E38', '#A3400F', '#5E1D02'],
-      dark: ['#1F1208', '#4A2409', '#7C3D0C', '#B4631F', '#E39A55', '#F8D9B3']
-    },
-    vorticity: {
-      light: ['#1A5480', '#4C8CB8', '#9FC2D9', '#EAEAE6', '#E2B49E', '#C36B4B', '#8C2C17'],
-      dark: ['#9BD6F6', '#5CA5D6', '#31658B', '#2A3336', '#8D4527', '#CA7340', '#F3B385']
-    },
-    correlation: {
-      light: ['#0B0A1A', '#2E1A50', '#6C2069', '#A62C60', '#D65340', '#F09B3C', '#F9E18B', '#FFFCEC'],
-      dark: ['#0B0A1A', '#2E1A50', '#6C2069', '#A62C60', '#D65340', '#F09B3C', '#F9E18B', '#FFFCEC']
-    }
+    /* viridis */
+    field: ['#440154', '#472d7b', '#3b528b', '#2c728e', '#21918c',
+            '#28ae80', '#5ec962', '#addc30', '#fde725'],
+    /* navy ← 중성 → brick */
+    diverging: ['#0f4c81', '#3f74a2', '#82a3c2', '#c3d0dc', '#eceef0',
+                '#e3c6b8', '#cf9179', '#bd6249', '#a83f2b']
   };
 
   function hex(h) {
@@ -34,18 +23,14 @@
   }
 
   var cache = Object.create(null);
-  function stops(name, theme) {
-    var key = name + '|' + theme;
-    if (!cache[key]) {
-      var r = RAMPS[name] || RAMPS.speed;
-      cache[key] = (r[theme] || r.light).map(hex);
-    }
-    return cache[key];
+  function stops(name) {
+    if (!cache[name]) cache[name] = (RAMPS[name] || RAMPS.field).map(hex);
+    return cache[name];
   }
 
   /* t in [0,1] -> [r,g,b] */
-  function sample(name, t, theme, out) {
-    var s = stops(name, theme);
+  function sample(name, t, out) {
+    var s = stops(name);
     t = t !== t ? 0 : (t < 0 ? 0 : (t > 1 ? 1 : t));
     var f = t * (s.length - 1), i = Math.floor(f), w = f - i;
     var a = s[i], b = s[Math.min(s.length - 1, i + 1)];
@@ -56,25 +41,24 @@
     return out;
   }
 
-  function css(name, t, theme) {
-    var c = sample(name, t, theme);
+  function css(name, t) {
+    var c = sample(name, t);
     return 'rgb(' + Math.round(c[0]) + ',' + Math.round(c[1]) + ',' + Math.round(c[2]) + ')';
   }
 
-  /* CSS gradient string for a colour bar. lo/hi restrict it to part of the
-   * ramp, so a bar can show exactly the slice the marks were drawn from. */
-  function gradient(name, theme, deg, lo, hi) {
+  /* 색 띠용 CSS gradient. lo/hi 로 램프의 일부만 쓸 수 있다. */
+  function gradient(name, deg, lo, hi) {
     var parts = [], n = 12, c;
     lo = lo || 0; hi = hi === undefined ? 1 : hi;
     for (var i = 0; i <= n; i++) {
-      c = sample(name, lo + (hi - lo) * (i / n), theme);
+      c = sample(name, lo + (hi - lo) * (i / n));
       parts.push('rgb(' + Math.round(c[0]) + ',' + Math.round(c[1]) + ',' + Math.round(c[2]) +
         ') ' + Math.round(100 * i / n) + '%');
     }
     return 'linear-gradient(' + (deg === undefined ? 90 : deg) + 'deg,' + parts.join(',') + ')';
   }
 
-  /* A readable range: [0,max] for sequential, symmetric for diverging. */
+  /* 읽기 좋은 범위: 순차는 [0,max], 발산은 0 을 가운데 둔 대칭 */
   function niceRange(arr, status, symmetric, pct) {
     var vals = [], i;
     for (i = 0; i < arr.length; i++) {

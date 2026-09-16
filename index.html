@@ -5,252 +5,326 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>PIV Simulator</title>
 <meta name="description" content="입자영상유속계(PIV)의 상호상관 계산을 브라우저에서 직접 실행해 보는 시뮬레이터. 합성 입자영상의 참값과 비교해 부화소 정밀도를 확인할 수 있습니다.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap">
 <link rel="stylesheet" href="css/piv.css">
 </head>
 <body>
-<div class="page">
+<div class="app">
 
-  <header class="masthead">
-    <p class="eyebrow" data-i18n="app.eyebrow"></p>
+  <header>
     <h1 data-i18n="app.title"></h1>
-    <p class="lede" data-i18n="app.lede"></p>
-    <div class="masthead-tools">
-      <button type="button" id="langBtn" class="ghost" data-i18n="app.langLabel"></button>
-      <button type="button" id="themeBtn" class="ghost" data-i18n-aria="app.themeLabel" aria-label="theme">◑</button>
+    <span class="tag" data-i18n="app.tag"></span>
+    <div class="seg" id="stepSeg">
+      <button type="button" data-step="1" data-i18n="step.1.t"></button>
+      <button type="button" data-step="2" data-i18n="step.2.t"></button>
+      <button type="button" data-step="3" data-i18n="step.3.t"></button>
+      <button type="button" data-step="4" data-i18n="step.4.t"></button>
+    </div>
+    <span class="spring"></span>
+    <p class="headhint" id="headHint"></p>
+    <div class="seg" id="langSeg">
+      <button type="button" data-lang="ko" class="on">KO</button>
+      <button type="button" data-lang="en">EN</button>
     </div>
   </header>
 
-  <ol class="steps" id="steps">
-    <li><button type="button" class="step" data-step="1">
-      <span class="step-n" data-i18n="step.1.n"></span>
-      <h3 data-i18n="step.1.t"></h3>
-      <p data-i18n="step.1.d"></p>
-    </button></li>
-    <li><button type="button" class="step" data-step="2">
-      <span class="step-n" data-i18n="step.2.n"></span>
-      <h3 data-i18n="step.2.t"></h3>
-      <p data-i18n="step.2.d"></p>
-    </button></li>
-    <li><button type="button" class="step" data-step="3">
-      <span class="step-n" data-i18n="step.3.n"></span>
-      <h3 data-i18n="step.3.t"></h3>
-      <p data-i18n="step.3.d"></p>
-    </button></li>
-    <li><button type="button" class="step" data-step="4">
-      <span class="step-n" data-i18n="step.4.n"></span>
-      <h3 data-i18n="step.4.t"></h3>
-      <p data-i18n="step.4.d"></p>
-    </button></li>
-  </ol>
+  <div class="main">
 
-  <div class="bench">
-
-    <!-- ---------- stage ---------- -->
-    <section class="stage-col">
-      <div class="stage-bar">
-        <button type="button" id="runBtn" class="run" data-i18n="run"></button>
-        <button type="button" id="reshootBtn" data-i18n="reshoot" data-i18n-title="reshoot.hint"></button>
-        <span class="spacer"></span>
-        <label class="sr" for="bgSelect" data-i18n="view.bg"></label>
-        <select id="bgSelect">
-          <option value="a" data-i18n="bg.a"></option>
-          <option value="blink" data-i18n="bg.blink"></option>
-          <option value="pair" data-i18n="bg.pair"></option>
-          <option value="speed" data-i18n="bg.speed"></option>
-          <option value="vort" data-i18n="bg.vort"></option>
-          <option value="err" data-i18n="bg.err"></option>
-          <option value="div" data-i18n="bg.div"></option>
-        </select>
+    <!-- ───────── 사이드바 ───────── -->
+    <aside>
+      <button type="button" id="runBtn" class="btn primary" data-i18n="run"></button>
+      <div class="btnrow">
+        <button type="button" id="reshootBtn" class="btn" data-i18n="reshoot"></button>
+        <button type="button" id="copyCsv" class="btn" data-i18n="copy.csv"></button>
       </div>
+      <p class="toast" id="toast"></p>
 
-      <div class="sensor picking" id="sensor">
-        <canvas id="stage" width="768" height="768"></canvas>
-        <div class="stage-veil" id="veil"><span data-i18n="stage.empty"></span></div>
-        <div class="progress" id="progress" style="width:0"></div>
-      </div>
-
-      <div class="stage-foot">
-        <span class="bar" id="rampBar" hidden>
-          <span class="num" id="rampLo">0</span>
-          <span class="ramp" id="ramp"></span>
-          <span class="num" id="rampHi">1</span>
-          <span id="rampLabel"></span>
-        </span>
-        <span class="key" id="keyMeas" hidden><i></i><span data-i18n="legend.measured"></span></span>
-        <span class="key" id="keyTruth" hidden><i></i><span data-i18n="legend.truth"></span></span>
-        <span class="key" id="keyRej"><i></i><span data-i18n="legend.rejected"></span></span>
-        <span class="spacer"></span>
-        <span id="stageHint" data-i18n="stage.hint"></span>
-      </div>
-    </section>
-
-    <!-- ---------- controls ---------- -->
-    <aside class="panel controls">
-      <div class="group">
-        <h3 data-i18n="group.flow"></h3>
-        <div class="field">
-          <label for="flowKind" data-i18n="flow.kind"></label>
-          <select id="flowKind"></select>
-        </div>
-        <div class="field">
-          <div class="row">
-            <label for="dispRange" data-i18n="flow.disp"></label>
-            <span class="val" id="dispVal"></span>
+      <details class="grp" id="gFlow" open>
+        <summary>
+          <h2 data-i18n="group.flow"></h2>
+          <span class="gstate" id="gsFlow"></span><i class="gchev"></i>
+        </summary>
+        <div class="body">
+          <div class="ctrl">
+            <div class="row"><label for="flowKind" data-i18n="flow.kind"></label></div>
+            <select class="pick" id="flowKind"></select>
+            <span class="hint" id="flowHint"></span>
           </div>
-          <input type="range" id="dispRange" min="1" max="16" step="0.5" value="6">
-          <p class="hint" data-i18n="flow.disp.hint"></p>
-        </div>
-      </div>
-
-      <div class="group">
-        <h3 data-i18n="group.record"></h3>
-        <div class="field">
-          <div class="row">
-            <label for="seedRange" data-i18n="rec.seed"></label>
-            <span class="val" id="seedVal"></span>
-          </div>
-          <input type="range" id="seedRange" min="1" max="40" step="1" value="14">
-          <p class="hint" data-i18n="rec.seed.hint"></p>
-        </div>
-        <div class="field">
-          <div class="row">
-            <label for="dpRange" data-i18n="rec.dp"></label>
-            <span class="val" id="dpVal"></span>
-          </div>
-          <input type="range" id="dpRange" min="1" max="5" step="0.1" value="2.6">
-          <p class="hint" data-i18n="rec.dp.hint"></p>
-        </div>
-        <div class="field">
-          <div class="row">
-            <label for="noiseRange" data-i18n="rec.noise"></label>
-            <span class="val" id="noiseVal"></span>
-          </div>
-          <input type="range" id="noiseRange" min="0" max="12" step="0.5" value="1.5">
-        </div>
-        <div class="field">
-          <div class="row">
-            <label for="lossRange" data-i18n="rec.loss"></label>
-            <span class="val" id="lossVal"></span>
-          </div>
-          <input type="range" id="lossRange" min="0" max="60" step="1" value="5">
-          <p class="hint" data-i18n="rec.loss.hint"></p>
-        </div>
-        <div class="field">
-          <label for="sizeSelect" data-i18n="rec.size"></label>
-          <select id="sizeSelect">
-            <option value="256">256 × 256 px</option>
-            <option value="384" selected>384 × 384 px</option>
-            <option value="512">512 × 512 px</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="group">
-        <h3 data-i18n="group.process"></h3>
-        <div class="field">
-          <label for="winSelect" data-i18n="proc.win"></label>
-          <select id="winSelect">
-            <option value="16">16 × 16 px</option>
-            <option value="32" selected>32 × 32 px</option>
-            <option value="64">64 × 64 px</option>
-          </select>
-          <p class="hint" data-i18n="proc.win.hint"></p>
-        </div>
-        <div class="field">
-          <label for="overlapSelect" data-i18n="proc.overlap"></label>
-          <select id="overlapSelect">
-            <option value="0">0 %</option>
-            <option value="0.25">25 %</option>
-            <option value="0.5" selected>50 %</option>
-            <option value="0.75">75 %</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="passesSelect" data-i18n="proc.passes"></label>
-          <select id="passesSelect">
-            <option value="1">1</option>
-            <option value="2">2</option>
-            <option value="3" selected>3</option>
-          </select>
-          <p class="hint" data-i18n="proc.passes.hint"></p>
-        </div>
-        <div class="field">
-          <label for="subpixSelect" data-i18n="proc.subpixel"></label>
-          <select id="subpixSelect">
-            <option value="gauss" data-i18n="sp.gauss"></option>
-            <option value="parabolic" data-i18n="sp.parabolic"></option>
-            <option value="centroid" data-i18n="sp.centroid"></option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="threshSelect" data-i18n="proc.threshold"></label>
-          <select id="threshSelect">
-            <option value="1.5">1.5</option>
-            <option value="2" selected>2.0</option>
-            <option value="3">3.0</option>
-            <option value="1000">off</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="group">
-        <h3 data-i18n="group.view"></h3>
-        <div class="field">
-          <label data-i18n="view.overlay"></label>
-          <div class="seg" id="overlaySeg">
-            <input type="checkbox" id="ovVectors" checked><label for="ovVectors"><span class="swatch" style="background:var(--laser)"></span><span data-i18n="ov.vectors"></span></label>
-            <input type="checkbox" id="ovTruth"><label for="ovTruth"><span class="swatch" style="background:var(--signal)"></span><span data-i18n="ov.truth"></span></label>
-            <input type="checkbox" id="ovError"><label for="ovError"><span data-i18n="ov.error"></span></label>
-            <input type="checkbox" id="ovGrid"><label for="ovGrid"><span data-i18n="ov.grid"></span></label>
+          <div class="ctrl">
+            <div class="row">
+              <label for="dispRange" data-i18n="flow.disp"></label>
+              <span class="val">
+                <input class="num-in" id="dispNum" type="number" min="1" max="16" step="0.5">
+                <em class="unit">px</em>
+              </span>
+            </div>
+            <span class="hint" id="dispHint"></span>
+            <input type="range" id="dispRange" min="1" max="16" step="0.5" value="6">
           </div>
         </div>
-        <div class="field">
-          <div class="row">
-            <label for="scaleRange" data-i18n="view.scale"></label>
-            <span class="val" id="scaleVal"></span>
+      </details>
+
+      <details class="grp" id="gRec" open>
+        <summary>
+          <h2 data-i18n="group.record"></h2>
+          <span class="gstate" id="gsRec"></span><i class="gchev"></i>
+        </summary>
+        <div class="body">
+          <div class="ctrl">
+            <div class="row">
+              <label for="seedRange" data-i18n="rec.seed"></label>
+              <span class="val">
+                <input class="num-in" id="seedNum" type="number" min="1" max="40" step="1">
+                <em class="unit" data-i18n="unit.count"></em>
+              </span>
+            </div>
+            <span class="hint" id="seedHint"></span>
+            <input type="range" id="seedRange" min="1" max="40" step="1" value="14">
           </div>
-          <input type="range" id="scaleRange" min="0.3" max="4" step="0.1" value="1">
+          <div class="ctrl">
+            <div class="row">
+              <label for="dpRange" data-i18n="rec.dp"></label>
+              <span class="val">
+                <input class="num-in" id="dpNum" type="number" min="1" max="5" step="0.1">
+                <em class="unit">px</em>
+              </span>
+            </div>
+            <span class="hint" id="dpHint"></span>
+            <input type="range" id="dpRange" min="1" max="5" step="0.1" value="2.6">
+          </div>
+          <div class="ctrl">
+            <div class="row">
+              <label for="lossRange" data-i18n="rec.loss"></label>
+              <span class="val">
+                <input class="num-in" id="lossNum" type="number" min="0" max="60" step="1">
+                <em class="unit">%</em>
+              </span>
+            </div>
+            <span class="hint" id="lossHint"></span>
+            <input type="range" id="lossRange" min="0" max="60" step="1" value="5">
+          </div>
+          <div class="ctrl">
+            <div class="row">
+              <label for="noiseRange" data-i18n="rec.noise"></label>
+              <span class="val">
+                <input class="num-in" id="noiseNum" type="number" min="0" max="12" step="0.5">
+                <em class="unit">%</em>
+              </span>
+            </div>
+            <span class="hint" id="noiseHint"></span>
+            <input type="range" id="noiseRange" min="0" max="12" step="0.5" value="1.5">
+          </div>
+          <details class="sub">
+            <summary data-i18n="rec.more"></summary>
+            <div class="body">
+              <div class="ctrl">
+                <div class="row"><label for="sizeSelect" data-i18n="rec.size"></label></div>
+                <select class="pick" id="sizeSelect">
+                  <option value="256">256 × 256 px</option>
+                  <option value="384" selected>384 × 384 px</option>
+                  <option value="512">512 × 512 px</option>
+                </select>
+                <span class="hint" id="sizeHint"></span>
+              </div>
+            </div>
+          </details>
         </div>
-      </div>
+      </details>
+
+      <details class="grp" id="gProc" open>
+        <summary>
+          <h2 data-i18n="group.process"></h2>
+          <span class="gstate" id="gsProc"></span><i class="gchev"></i>
+        </summary>
+        <div class="body">
+          <div class="ctrl">
+            <div class="row"><label for="winSelect" data-i18n="proc.win"></label></div>
+            <select class="pick" id="winSelect">
+              <option value="16">16 × 16 px</option>
+              <option value="32" selected>32 × 32 px</option>
+              <option value="64">64 × 64 px</option>
+            </select>
+            <span class="hint" id="winHint"></span>
+          </div>
+          <div class="ctrl">
+            <div class="row"><label for="overlapSelect" data-i18n="proc.overlap"></label></div>
+            <select class="pick" id="overlapSelect">
+              <option value="0">0 %</option>
+              <option value="0.25">25 %</option>
+              <option value="0.5" selected>50 %</option>
+              <option value="0.75">75 %</option>
+            </select>
+            <span class="hint" id="overlapHint"></span>
+          </div>
+          <div class="ctrl">
+            <div class="row"><label for="passesSelect" data-i18n="proc.passes"></label></div>
+            <select class="pick" id="passesSelect">
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3" selected>3</option>
+            </select>
+            <span class="hint" id="passesHint"></span>
+          </div>
+          <details class="sub">
+            <summary data-i18n="proc.more"></summary>
+            <div class="body">
+              <div class="ctrl">
+                <div class="row"><label for="subpixSelect" data-i18n="proc.subpixel"></label></div>
+                <select class="pick" id="subpixSelect">
+                  <option value="gauss" data-i18n="sp.gauss"></option>
+                  <option value="parabolic" data-i18n="sp.parabolic"></option>
+                  <option value="centroid" data-i18n="sp.centroid"></option>
+                </select>
+                <span class="hint" id="subpixHint"></span>
+              </div>
+              <div class="ctrl">
+                <div class="row"><label for="threshSelect" data-i18n="proc.threshold"></label></div>
+                <select class="pick" id="threshSelect">
+                  <option value="1.5">1.5</option>
+                  <option value="2" selected>2.0</option>
+                  <option value="3">3.0</option>
+                  <option value="1000" data-i18n="proc.threshold.off"></option>
+                </select>
+                <span class="hint" id="threshHint"></span>
+              </div>
+            </div>
+          </details>
+        </div>
+      </details>
+
+      <details class="grp" id="gView" open>
+        <summary>
+          <h2 data-i18n="group.view"></h2>
+          <span class="gstate" id="gsView"></span><i class="gchev"></i>
+        </summary>
+        <div class="body">
+          <div class="ctrl">
+            <div class="row"><label for="bgSelect" data-i18n="view.bg"></label></div>
+            <select class="pick" id="bgSelect">
+              <option value="a" data-i18n="bg.a"></option>
+              <option value="blink" data-i18n="bg.blink"></option>
+              <option value="pair" data-i18n="bg.pair"></option>
+              <option value="speed" data-i18n="bg.speed"></option>
+              <option value="vort" data-i18n="bg.vort"></option>
+              <option value="err" data-i18n="bg.err"></option>
+              <option value="div" data-i18n="bg.div"></option>
+            </select>
+          </div>
+          <div class="ctrl">
+            <div class="row"><label data-i18n="view.overlay"></label></div>
+            <label class="chk"><input type="checkbox" id="ovVectors" checked><span class="box"></span>
+              <span class="swatch" style="background:var(--c1)"></span>
+              <span data-i18n="ov.vectors"></span></label>
+            <label class="chk"><input type="checkbox" id="ovTruth"><span class="box"></span>
+              <span class="swatch" style="background:var(--c2)"></span>
+              <span data-i18n="ov.truth"></span></label>
+            <label class="chk"><input type="checkbox" id="ovError"><span class="box"></span>
+              <span data-i18n="ov.error"></span></label>
+            <label class="chk"><input type="checkbox" id="ovGrid"><span class="box"></span>
+              <span data-i18n="ov.grid"></span></label>
+          </div>
+          <div class="ctrl">
+            <div class="row">
+              <label for="scaleRange" data-i18n="view.scale"></label>
+              <span class="val">
+                <input class="num-in" id="scaleNum" type="number" min="0.3" max="4" step="0.1">
+                <em class="unit">×</em>
+              </span>
+            </div>
+            <span class="hint" id="scaleHint"></span>
+            <input type="range" id="scaleRange" min="0.3" max="4" step="0.1" value="1">
+          </div>
+        </div>
+      </details>
+
+      <details class="grp" id="gUpload">
+        <summary>
+          <h2 data-i18n="upload.title"></h2>
+          <span class="gstate" id="gsUpload"></span><i class="gchev"></i>
+        </summary>
+        <div class="body">
+          <p class="note" data-i18n="upload.hint"></p>
+          <div class="ctrl">
+            <div class="row"><label for="fileA" data-i18n="upload.a"></label></div>
+            <input type="file" id="fileA" accept="image/*">
+          </div>
+          <div class="ctrl">
+            <div class="row"><label for="fileB" data-i18n="upload.b"></label></div>
+            <input type="file" id="fileB" accept="image/*">
+          </div>
+          <button type="button" id="clearUpload" class="btn" data-i18n="upload.clear"
+                  style="margin-top:9px"></button>
+          <textarea class="dump" id="dump" readonly hidden></textarea>
+        </div>
+      </details>
+
+      <details class="grp" id="gAbout">
+        <summary>
+          <h2 data-i18n="about.title"></h2>
+          <span class="gstate" data-i18n="about.state"></span><i class="gchev"></i>
+        </summary>
+        <div class="body">
+          <p class="phys" data-i18n="about.p1"></p>
+          <p class="phys" style="margin-top:7px" data-i18n="about.p2"></p>
+          <p class="phys" style="margin-top:7px" data-i18n="about.p3"></p>
+          <p class="phys" style="margin-top:7px" data-i18n="about.p4"></p>
+          <p class="note" data-i18n="about.limit"></p>
+          <p class="note" data-i18n="about.ref" data-i18n-html></p>
+        </div>
+      </details>
     </aside>
 
-    <!-- ---------- inspector ---------- -->
-    <aside class="panel inspector">
-      <div class="insp-head">
-        <h2 data-i18n="insp.title"></h2>
-        <p data-i18n="insp.sub"></p>
+    <!-- ───────── 뷰포트 ───────── -->
+    <div class="viewport">
+      <div class="stage-wrap picking" id="stageWrap">
+        <canvas id="stage" width="768" height="768"></canvas>
       </div>
-      <div class="insp-body">
-        <p class="hint" id="inspPick" data-i18n="insp.pick"></p>
+      <div class="veil" id="veil"><span data-i18n="stage.empty"></span></div>
+      <div class="progress" id="progress" style="width:0"></div>
+
+      <section class="panel p-stats" id="pStats">
+        <h3 data-i18n="panel.stats"></h3>
+        <dl class="stats">
+          <div class="heroline">
+            <span id="heroCap"></span>
+            <dd class="hero" id="heroVal">—</dd>
+          </div>
+          <dt data-i18n="m.subpx"></dt><dd id="stSubpx">—</dd>
+          <div class="sep"></div>
+          <dt data-i18n="m.vectors"></dt><dd id="stVectors">—</dd>
+          <dt data-i18n="m.valid"></dt><dd id="stValid">—</dd>
+          <dt data-i18n="m.peak"></dt><dd id="stPeak">—</dd>
+          <dt data-i18n="m.bias"></dt><dd id="stBias">—</dd>
+          <dt data-i18n="m.passes"></dt><dd id="stPasses">—</dd>
+          <dt data-i18n="m.time"></dt><dd id="stTime">—</dd>
+        </dl>
+      </section>
+
+      <section class="panel p-scope">
+        <h3 data-i18n="insp.title"></h3>
+        <p class="scope-empty" id="inspPick" data-i18n="insp.pick"></p>
         <div id="inspContent" hidden>
-          <div class="pair">
+          <div class="scope-pair">
             <div class="tile">
               <span class="cap" data-i18n="insp.winA"></span>
-              <canvas id="winA" width="240" height="240"></canvas>
+              <canvas id="winA" width="220" height="220"></canvas>
             </div>
             <div class="tile">
               <span class="cap" data-i18n="insp.winB"></span>
-              <canvas id="winB" width="240" height="240"></canvas>
+              <canvas id="winB" width="220" height="220"></canvas>
             </div>
           </div>
-          <div class="tile" style="margin-top:12px">
-            <div class="corr-head">
-              <span class="cap" data-i18n="insp.corr"></span>
-              <span class="seg">
-                <input type="radio" name="corrMode" id="corr3d" value="3d" checked><label for="corr3d" data-i18n="insp.mode3d"></label>
-                <input type="radio" name="corrMode" id="corr2d" value="2d"><label for="corr2d" data-i18n="insp.mode2d"></label>
-              </span>
-            </div>
-            <canvas id="corr" width="520" height="340"></canvas>
-            <p class="hint" data-i18n="insp.corr.hint"></p>
+          <div class="scope-head">
+            <span class="cap" data-i18n="insp.corr"></span>
+            <span class="seg" id="corrSeg">
+              <button type="button" data-mode="3d" class="on" data-i18n="insp.mode3d"></button>
+              <button type="button" data-mode="2d" data-i18n="insp.mode2d"></button>
+            </span>
           </div>
-          <dl class="readouts" style="margin-top:12px">
+          <div class="tile"><canvas id="corr" width="520" height="320"></canvas></div>
+          <dl class="readouts">
             <dt data-i18n="insp.pos"></dt><dd id="rPos"></dd>
             <dt data-i18n="insp.measured"></dt><dd class="hi" id="rMeas"></dd>
-            <dt data-i18n="insp.truthv"></dt><dd class="sig" id="rTruth"></dd>
+            <dt data-i18n="insp.truthv"></dt><dd class="alt" id="rTruth"></dd>
             <dt data-i18n="insp.errv"></dt><dd id="rErr"></dd>
             <dt data-i18n="insp.subpix"></dt><dd id="rSub"></dd>
             <dt data-i18n="insp.shift"></dt><dd id="rShift"></dd>
@@ -259,74 +333,30 @@
             <dt data-i18n="insp.status"></dt><dd><span class="verdict" id="rStatus"></span></dd>
           </dl>
         </div>
-      </div>
-    </aside>
-  </div>
+      </section>
 
-  <!-- ---------- readout ---------- -->
-  <section class="readout">
-    <div class="panel hero">
-      <span class="cap" data-i18n="m.rms"></span>
-      <span class="big" id="rmsVal">—<small> px</small></span>
-      <span class="sub" data-i18n="m.rms.sub"></span>
-      <span class="fraction" id="rmsFraction"></span>
-    </div>
-    <div class="panel facts">
-      <div>
-        <h3 data-i18n="group.process"></h3>
-        <table class="stats">
-          <tbody>
-            <tr><th data-i18n="m.vectors"></th><td id="stVectors">—</td></tr>
-            <tr><th data-i18n="m.valid"></th><td id="stValid">—</td></tr>
-            <tr><th data-i18n="m.peak"></th><td id="stPeak">—</td></tr>
-            <tr><th data-i18n="m.bias"></th><td id="stBias">—</td></tr>
-            <tr><th data-i18n="m.maxerr"></th><td id="stMax">—</td></tr>
-            <tr><th data-i18n="m.passes"></th><td id="stPasses">—</td></tr>
-            <tr><th data-i18n="m.time"></th><td id="stTime">—</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <div>
-        <h3 data-i18n="diag.title"></h3>
-        <div class="diags" id="diags"></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ---------- tail ---------- -->
-  <div class="tail">
-    <section class="panel card">
-      <h2 data-i18n="upload.title"></h2>
-      <p class="hint" data-i18n="upload.hint"></p>
-      <div class="upload-row">
-        <div class="field">
-          <label for="fileA" data-i18n="upload.a"></label>
-          <input type="file" id="fileA" accept="image/*">
+      <section class="panel p-legend">
+        <div class="bar" id="rampBar" hidden>
+          <span id="rampLo">0</span>
+          <span class="ramp" id="ramp"></span>
+          <span id="rampHi">1</span>
         </div>
-        <div class="field">
-          <label for="fileB" data-i18n="upload.b"></label>
-          <input type="file" id="fileB" accept="image/*">
+        <p class="legend-cap" id="legendCap"></p>
+        <div class="keys">
+          <span class="scalebar" id="keyScale"><i id="scaleTick"></i><span id="scaleText"></span></span>
+          <span class="key" style="color:var(--c1)" id="keyMeas"><i></i><span data-i18n="legend.measured"></span></span>
+          <span class="key" style="color:var(--c2)" id="keyTruth" hidden><i></i><span data-i18n="legend.truth"></span></span>
+          <span class="key" style="color:var(--bad)" id="keyRej"><i></i><span data-i18n="legend.rejected"></span></span>
         </div>
-      </div>
-      <div class="actions">
-        <button type="button" id="clearUpload" data-i18n="upload.clear"></button>
-        <button type="button" id="copyCsv" data-i18n="copy.csv"></button>
-      </div>
-      <p class="toast" id="toast"></p>
-      <textarea class="dump" id="dump" readonly hidden></textarea>
-    </section>
+      </section>
 
-    <section class="panel card">
-      <h2 data-i18n="about.title"></h2>
-      <p data-i18n="about.p1"></p>
-      <p data-i18n="about.p2"></p>
-      <p data-i18n="about.p3"></p>
-      <p data-i18n="about.p4"></p>
-      <p class="fineprint" data-i18n="about.ref" data-i18n-html></p>
-      <p class="fineprint" data-i18n="about.limit"></p>
-    </section>
+      <section class="panel p-warn" id="pWarn" hidden>
+        <p class="wtitle"><span class="wmark">▲</span><span id="warnTitle"></span></p>
+        <p class="wbody" id="warnBody"></p>
+        <p class="wfix" id="warnFix"></p>
+      </section>
+    </div>
   </div>
-
 </div>
 
 <script src="js/fft.js"></script>
