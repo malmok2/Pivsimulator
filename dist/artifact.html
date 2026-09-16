@@ -1,0 +1,3446 @@
+<title>PIV Simulator</title>
+<meta name="description" content="입자영상유속계(PIV)의 상호상관 계산을 브라우저에서 직접 실행해 보는 시뮬레이터. 합성 입자영상의 참값과 비교해 부화소 정밀도를 확인할 수 있습니다.">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap">
+<style>
+/* PIV Simulator — one stylesheet, token-driven, light and dark.
+ * Palette: laser green (532 nm) for anything measured, burnt orange for the
+ * exact answer and the correlation peak, cool teal-biased neutrals for paper.
+ */
+
+:root {
+  --bg: #E9EEEE;
+  --surface: #FCFDFD;
+  --sunken: #F0F5F4;
+  --ink: #0E1A1C;
+  --ink-2: #3C4F53;
+  --muted: #74888C;
+  --line: #CFDBDA;
+  --line-2: #B6C7C5;
+  --laser: #0F7A57;
+  --laser-ink: #0A5B41;
+  --laser-soft: #D9EEE5;
+  --signal: #B4480F;
+  --signal-soft: #FAE4D4;
+  --ok: #1E7D5E;
+  --warn: #A5631A;
+  --bad: #AE3827;
+  --sensor: #060D0C;
+  --sensor-line: #24403A;
+  --shadow: 0 1px 2px rgba(14, 26, 28, .06), 0 8px 24px -16px rgba(14, 26, 28, .35);
+  --theme-name: "light";
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0B1315;
+    --surface: #121D20;
+    --sunken: #0E1719;
+    --ink: #E7F0EF;
+    --ink-2: #AABEBE;
+    --muted: #73908F;
+    --line: #213236;
+    --line-2: #304649;
+    --laser: #46DFA0;
+    --laser-ink: #8CEFC4;
+    --laser-soft: #10352A;
+    --signal: #FF9A55;
+    --signal-soft: #3A2212;
+    --ok: #5BD39B;
+    --warn: #E4A94E;
+    --bad: #F0705C;
+    --sensor: #050A0A;
+    --sensor-line: #223C37;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 10px 30px -18px rgba(0, 0, 0, .9);
+    --theme-name: "dark";
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0B1315;
+  --surface: #121D20;
+  --sunken: #0E1719;
+  --ink: #E7F0EF;
+  --ink-2: #AABEBE;
+  --muted: #73908F;
+  --line: #213236;
+  --line-2: #304649;
+  --laser: #46DFA0;
+  --laser-ink: #8CEFC4;
+  --laser-soft: #10352A;
+  --signal: #FF9A55;
+  --signal-soft: #3A2212;
+  --ok: #5BD39B;
+  --warn: #E4A94E;
+  --bad: #F0705C;
+  --sensor: #050A0A;
+  --sensor-line: #223C37;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 10px 30px -18px rgba(0, 0, 0, .9);
+  --theme-name: "dark";
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "IBM Plex Sans KR", "IBM Plex Sans", system-ui, -apple-system, "Malgun Gothic", sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-text-size-adjust: 100%;
+}
+
+.page {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding-inline: 16px;
+  padding-block: 28px 56px;
+}
+
+h1, h2, h3 { margin: 0; text-wrap: balance; letter-spacing: -.015em; }
+p { margin: 0; }
+
+.eyebrow {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .14em;
+  color: var(--laser-ink);
+  text-transform: uppercase;
+}
+
+.mono, .num {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- masthead --------------------------------------------------------- */
+
+.masthead {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--line);
+}
+.masthead h1 { font-size: clamp(25px, 4.4vw, 40px); font-weight: 700; line-height: 1.14; }
+.masthead .eyebrow, .masthead h1 { grid-column: 1; }
+.masthead .lede {
+  grid-column: 1 / -1;
+  max-width: 64ch;
+  color: var(--ink-2);
+  font-size: 15px;
+}
+.masthead-tools { grid-column: 2; grid-row: 1 / span 2; display: flex; gap: 6px; }
+
+button {
+  font: inherit;
+  cursor: pointer;
+  border-radius: 7px;
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  color: var(--ink);
+  padding: 6px 11px;
+  transition: background .13s, border-color .13s, color .13s;
+}
+button:hover { border-color: var(--laser); color: var(--laser-ink); }
+button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible {
+  outline: 2px solid var(--laser);
+  outline-offset: 2px;
+}
+.ghost { background: transparent; font-size: 13px; padding: 5px 10px; }
+
+/* ---- the four steps --------------------------------------------------- */
+
+.steps {
+  list-style: none;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  margin: 22px 0 0;
+  padding: 0;
+  counter-reset: none;
+}
+.steps > li { display: flex; }
+.step {
+  flex: 1;
+  text-align: left;
+  display: grid;
+  gap: 3px;
+  align-content: start;
+  padding: 11px 13px 13px;
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--line-2);
+  border-radius: 0 0 8px 8px;
+  background: var(--surface);
+}
+.step:hover { border-top-color: var(--laser); color: inherit; }
+.step[aria-current="true"] {
+  border-top-color: var(--laser);
+  background: var(--laser-soft);
+}
+.step-n {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10.5px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.step[aria-current="true"] .step-n { color: var(--laser-ink); }
+.step h3 { font-size: 15px; font-weight: 600; }
+.step p { font-size: 12.5px; line-height: 1.45; color: var(--ink-2); }
+
+/* ---- bench layout ----------------------------------------------------- */
+
+.bench {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "stage" "controls" "inspector";
+  margin-top: 18px;
+}
+@media (min-width: 900px) {
+  .bench {
+    grid-template-columns: 252px minmax(0, 1fr);
+    grid-template-areas: "controls stage" "controls inspector";
+    align-items: start;
+  }
+}
+@media (min-width: 1300px) {
+  .bench {
+    grid-template-columns: 258px minmax(0, 1fr) 330px;
+    grid-template-areas: "controls stage inspector";
+  }
+}
+.controls { grid-area: controls; }
+.stage-col { grid-area: stage; min-width: 0; }
+.inspector { grid-area: inspector; }
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+
+/* ---- control groups --------------------------------------------------- */
+
+.group { padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.group:last-child { border-bottom: 0; }
+.group > h3 {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10.5px;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 9px;
+}
+.field { display: grid; gap: 4px; margin-bottom: 11px; }
+.field:last-child { margin-bottom: 0; }
+.field > .row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.field label { font-size: 12.5px; color: var(--ink-2); }
+.field .val {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.hint { font-size: 11.5px; line-height: 1.4; color: var(--muted); }
+
+select, input[type="file"] {
+  width: 100%;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--sunken);
+  border: 1px solid var(--line-2);
+  border-radius: 7px;
+  padding: 6px 8px;
+}
+select { cursor: pointer; }
+
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 20px;
+  background: transparent;
+  margin: 0;
+  cursor: ew-resize;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--line-2);
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px; height: 14px;
+  margin-top: -5.5px;
+  border-radius: 50%;
+  background: var(--laser);
+  border: 2px solid var(--surface);
+  box-shadow: 0 0 0 1px var(--laser);
+}
+input[type="range"]::-moz-range-track { height: 3px; border-radius: 2px; background: var(--line-2); }
+input[type="range"]::-moz-range-thumb {
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--laser); border: 2px solid var(--surface);
+}
+
+/* segmented + chip toggles */
+.seg { display: flex; flex-wrap: wrap; gap: 4px; }
+.seg input {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px;
+  opacity: 0;
+  clip-path: inset(50%);
+  pointer-events: none;
+}
+.seg label, .chip {
+  font-size: 12px;
+  padding: 4px 9px;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  background: var(--sunken);
+  color: var(--ink-2);
+  cursor: pointer;
+  user-select: none;
+}
+.seg label:hover, .chip:hover { border-color: var(--laser); }
+.seg input:checked + label, .chip[aria-pressed="true"] {
+  background: var(--laser-soft);
+  border-color: var(--laser);
+  color: var(--laser-ink);
+  font-weight: 500;
+}
+.seg input:focus-visible + label { outline: 2px solid var(--laser); outline-offset: 2px; }
+.swatch {
+  display: inline-block;
+  width: 9px; height: 9px;
+  margin-right: 5px;
+  border-radius: 2px;
+  vertical-align: baseline;
+}
+
+/* ---- stage ------------------------------------------------------------- */
+
+.stage-col { display: grid; gap: 10px; }
+.stage-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.run {
+  background: var(--laser);
+  border-color: var(--laser);
+  color: #04120D;
+  font-weight: 600;
+  padding: 8px 16px;
+  font-size: 14px;
+}
+.run:hover { filter: brightness(1.07); color: #04120D; border-color: var(--laser); }
+.run[disabled] { opacity: .55; cursor: progress; }
+.stage-bar .spacer { flex: 1 1 auto; }
+.stage-bar select { width: auto; min-width: 150px; }
+
+.sensor {
+  position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--sensor);
+  border: 1px solid var(--sensor-line);
+  box-shadow: var(--shadow);
+}
+.sensor canvas { display: block; width: 100%; height: auto; }
+.sensor.picking { cursor: crosshair; }
+.stage-veil {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  text-align: center;
+  color: #CFE3DC;
+  font-size: 13px;
+  background: rgba(6, 13, 12, .72);
+  backdrop-filter: blur(2px);
+}
+.progress {
+  position: absolute;
+  left: 0; bottom: 0;
+  height: 2px;
+  background: var(--laser);
+  transition: width .08s linear;
+}
+.stage-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.bar .ramp {
+  width: 128px; height: 9px;
+  border-radius: 2px;
+  border: 1px solid var(--line-2);
+}
+/* colours taken from arrows drawn on the sensor frame: show them framed the
+   way they appear there, or the pale end vanishes on a light page */
+.bar.on-sensor .ramp {
+  border-color: var(--sensor-line);
+  box-shadow: 0 0 0 3px var(--sensor);
+  margin-inline: 3px;
+}
+.key { display: inline-flex; align-items: center; gap: 5px; }
+.key i {
+  width: 16px; height: 0;
+  border-top: 2px solid currentColor;
+  display: inline-block;
+}
+
+/* ---- inspector -------------------------------------------------------- */
+
+.inspector { display: grid; }
+.insp-head { padding: 12px 14px 0; }
+.insp-head h2 { font-size: 15px; font-weight: 600; }
+.insp-head p { font-size: 11.5px; color: var(--muted); }
+.insp-body { padding: 12px 14px 14px; display: grid; gap: 12px; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.tile { display: grid; gap: 4px; }
+.tile .cap {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.tile canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
+  background: var(--sensor);
+  border: 1px solid var(--sensor-line);
+}
+.corr-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.readouts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 10px;
+  font-size: 12.5px;
+}
+.readouts dt { color: var(--muted); }
+.readouts dd {
+  margin: 0;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.readouts dd.hi { color: var(--laser-ink); font-weight: 500; }
+.readouts dd.sig { color: var(--signal); }
+.verdict { font-weight: 500; }
+.verdict[data-st="0"] { color: var(--ok); }
+.verdict[data-st="1"], .verdict[data-st="3"] { color: var(--warn); }
+.verdict[data-st="2"] { color: var(--muted); }
+
+/* ---- readout strip ---------------------------------------------------- */
+
+.readout {
+  margin-top: 18px;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 820px) {
+  .readout { grid-template-columns: minmax(230px, 300px) minmax(0, 1fr); }
+}
+.hero { padding: 16px 18px; display: grid; gap: 2px; align-content: start; }
+.hero .cap {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10.5px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.hero .big {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(38px, 7vw, 54px);
+  font-weight: 500;
+  line-height: 1.05;
+  letter-spacing: -.03em;
+  color: var(--laser-ink);
+}
+.hero .big small { font-size: .38em; font-weight: 400; color: var(--muted); letter-spacing: 0; }
+.hero .sub { font-size: 12px; color: var(--ink-2); }
+.hero .fraction {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line-2);
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.hero .fraction b { font-family: "IBM Plex Mono", ui-monospace, monospace; color: var(--ink); }
+
+.facts { padding: 14px 16px; display: grid; gap: 14px; }
+@media (min-width: 620px) { .facts { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); } }
+.facts h3 {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10.5px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 7px;
+}
+table.stats { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+table.stats th, table.stats td { text-align: left; padding: 3.5px 0; border-bottom: 1px solid var(--line); }
+table.stats th { font-weight: 400; color: var(--muted); }
+table.stats td {
+  text-align: right;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+table.stats tr:last-child th, table.stats tr:last-child td { border-bottom: 0; }
+
+.diags { display: grid; gap: 5px; }
+.diag {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  gap: 7px;
+  align-items: baseline;
+  font-size: 12.5px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: var(--sunken);
+}
+.diag .mark { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12px; text-align: center; }
+.diag[data-level="ok"] .mark { color: var(--ok); }
+.diag[data-level="warn"] .mark { color: var(--warn); }
+.diag[data-level="bad"] .mark { color: var(--bad); }
+.diag .what { color: var(--ink-2); }
+.diag .what em { font-style: normal; color: var(--muted); font-size: 11.5px; display: block; }
+.diag .num { font-size: 12px; }
+
+/* ---- footer sections -------------------------------------------------- */
+
+.tail { margin-top: 18px; display: grid; gap: 16px; }
+@media (min-width: 900px) { .tail { grid-template-columns: minmax(0, 320px) minmax(0, 1fr); } }
+.card { padding: 14px 16px; }
+.card h2 { font-size: 14px; font-weight: 600; margin-bottom: 7px; }
+.card p, .card li { font-size: 12.5px; line-height: 1.6; color: var(--ink-2); }
+.card p + p { margin-top: 7px; }
+.card .fineprint { margin-top: 9px; font-size: 11.5px; color: var(--muted); }
+.upload-row { display: grid; gap: 8px; margin: 8px 0; }
+.upload-row .field { margin: 0; }
+.actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.toast {
+  font-size: 12px;
+  color: var(--laser-ink);
+  min-height: 1.2em;
+}
+textarea.dump {
+  width: 100%;
+  height: 120px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  background: var(--sunken);
+  color: var(--ink);
+  border: 1px solid var(--line-2);
+  border-radius: 7px;
+  padding: 8px;
+  margin-top: 8px;
+}
+
+.sr {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: 0s !important; animation-duration: 0s !important; }
+}
+
+</style>
+<div class="page">
+
+  <header class="masthead">
+    <p class="eyebrow" data-i18n="app.eyebrow"></p>
+    <h1 data-i18n="app.title"></h1>
+    <p class="lede" data-i18n="app.lede"></p>
+    <div class="masthead-tools">
+      <button type="button" id="langBtn" class="ghost" data-i18n="app.langLabel"></button>
+      <button type="button" id="themeBtn" class="ghost" data-i18n-aria="app.themeLabel" aria-label="theme">◑</button>
+    </div>
+  </header>
+
+  <ol class="steps" id="steps">
+    <li><button type="button" class="step" data-step="1">
+      <span class="step-n" data-i18n="step.1.n"></span>
+      <h3 data-i18n="step.1.t"></h3>
+      <p data-i18n="step.1.d"></p>
+    </button></li>
+    <li><button type="button" class="step" data-step="2">
+      <span class="step-n" data-i18n="step.2.n"></span>
+      <h3 data-i18n="step.2.t"></h3>
+      <p data-i18n="step.2.d"></p>
+    </button></li>
+    <li><button type="button" class="step" data-step="3">
+      <span class="step-n" data-i18n="step.3.n"></span>
+      <h3 data-i18n="step.3.t"></h3>
+      <p data-i18n="step.3.d"></p>
+    </button></li>
+    <li><button type="button" class="step" data-step="4">
+      <span class="step-n" data-i18n="step.4.n"></span>
+      <h3 data-i18n="step.4.t"></h3>
+      <p data-i18n="step.4.d"></p>
+    </button></li>
+  </ol>
+
+  <div class="bench">
+
+    <!-- ---------- stage ---------- -->
+    <section class="stage-col">
+      <div class="stage-bar">
+        <button type="button" id="runBtn" class="run" data-i18n="run"></button>
+        <button type="button" id="reshootBtn" data-i18n="reshoot" data-i18n-title="reshoot.hint"></button>
+        <span class="spacer"></span>
+        <label class="sr" for="bgSelect" data-i18n="view.bg"></label>
+        <select id="bgSelect">
+          <option value="a" data-i18n="bg.a"></option>
+          <option value="blink" data-i18n="bg.blink"></option>
+          <option value="pair" data-i18n="bg.pair"></option>
+          <option value="speed" data-i18n="bg.speed"></option>
+          <option value="vort" data-i18n="bg.vort"></option>
+          <option value="err" data-i18n="bg.err"></option>
+          <option value="div" data-i18n="bg.div"></option>
+        </select>
+      </div>
+
+      <div class="sensor picking" id="sensor">
+        <canvas id="stage" width="768" height="768"></canvas>
+        <div class="stage-veil" id="veil"><span data-i18n="stage.empty"></span></div>
+        <div class="progress" id="progress" style="width:0"></div>
+      </div>
+
+      <div class="stage-foot">
+        <span class="bar" id="rampBar" hidden>
+          <span class="num" id="rampLo">0</span>
+          <span class="ramp" id="ramp"></span>
+          <span class="num" id="rampHi">1</span>
+          <span id="rampLabel"></span>
+        </span>
+        <span class="key" id="keyMeas" hidden><i></i><span data-i18n="legend.measured"></span></span>
+        <span class="key" id="keyTruth" hidden><i></i><span data-i18n="legend.truth"></span></span>
+        <span class="key" id="keyRej"><i></i><span data-i18n="legend.rejected"></span></span>
+        <span class="spacer"></span>
+        <span id="stageHint" data-i18n="stage.hint"></span>
+      </div>
+    </section>
+
+    <!-- ---------- controls ---------- -->
+    <aside class="panel controls">
+      <div class="group">
+        <h3 data-i18n="group.flow"></h3>
+        <div class="field">
+          <label for="flowKind" data-i18n="flow.kind"></label>
+          <select id="flowKind"></select>
+        </div>
+        <div class="field">
+          <div class="row">
+            <label for="dispRange" data-i18n="flow.disp"></label>
+            <span class="val" id="dispVal"></span>
+          </div>
+          <input type="range" id="dispRange" min="1" max="16" step="0.5" value="6">
+          <p class="hint" data-i18n="flow.disp.hint"></p>
+        </div>
+      </div>
+
+      <div class="group">
+        <h3 data-i18n="group.record"></h3>
+        <div class="field">
+          <div class="row">
+            <label for="seedRange" data-i18n="rec.seed"></label>
+            <span class="val" id="seedVal"></span>
+          </div>
+          <input type="range" id="seedRange" min="1" max="40" step="1" value="14">
+          <p class="hint" data-i18n="rec.seed.hint"></p>
+        </div>
+        <div class="field">
+          <div class="row">
+            <label for="dpRange" data-i18n="rec.dp"></label>
+            <span class="val" id="dpVal"></span>
+          </div>
+          <input type="range" id="dpRange" min="1" max="5" step="0.1" value="2.6">
+          <p class="hint" data-i18n="rec.dp.hint"></p>
+        </div>
+        <div class="field">
+          <div class="row">
+            <label for="noiseRange" data-i18n="rec.noise"></label>
+            <span class="val" id="noiseVal"></span>
+          </div>
+          <input type="range" id="noiseRange" min="0" max="12" step="0.5" value="1.5">
+        </div>
+        <div class="field">
+          <div class="row">
+            <label for="lossRange" data-i18n="rec.loss"></label>
+            <span class="val" id="lossVal"></span>
+          </div>
+          <input type="range" id="lossRange" min="0" max="60" step="1" value="5">
+          <p class="hint" data-i18n="rec.loss.hint"></p>
+        </div>
+        <div class="field">
+          <label for="sizeSelect" data-i18n="rec.size"></label>
+          <select id="sizeSelect">
+            <option value="256">256 × 256 px</option>
+            <option value="384" selected>384 × 384 px</option>
+            <option value="512">512 × 512 px</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="group">
+        <h3 data-i18n="group.process"></h3>
+        <div class="field">
+          <label for="winSelect" data-i18n="proc.win"></label>
+          <select id="winSelect">
+            <option value="16">16 × 16 px</option>
+            <option value="32" selected>32 × 32 px</option>
+            <option value="64">64 × 64 px</option>
+          </select>
+          <p class="hint" data-i18n="proc.win.hint"></p>
+        </div>
+        <div class="field">
+          <label for="overlapSelect" data-i18n="proc.overlap"></label>
+          <select id="overlapSelect">
+            <option value="0">0 %</option>
+            <option value="0.25">25 %</option>
+            <option value="0.5" selected>50 %</option>
+            <option value="0.75">75 %</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="passesSelect" data-i18n="proc.passes"></label>
+          <select id="passesSelect">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3" selected>3</option>
+          </select>
+          <p class="hint" data-i18n="proc.passes.hint"></p>
+        </div>
+        <div class="field">
+          <label for="subpixSelect" data-i18n="proc.subpixel"></label>
+          <select id="subpixSelect">
+            <option value="gauss" data-i18n="sp.gauss"></option>
+            <option value="parabolic" data-i18n="sp.parabolic"></option>
+            <option value="centroid" data-i18n="sp.centroid"></option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="threshSelect" data-i18n="proc.threshold"></label>
+          <select id="threshSelect">
+            <option value="1.5">1.5</option>
+            <option value="2" selected>2.0</option>
+            <option value="3">3.0</option>
+            <option value="1000">off</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="group">
+        <h3 data-i18n="group.view"></h3>
+        <div class="field">
+          <label data-i18n="view.overlay"></label>
+          <div class="seg" id="overlaySeg">
+            <input type="checkbox" id="ovVectors" checked><label for="ovVectors"><span class="swatch" style="background:var(--laser)"></span><span data-i18n="ov.vectors"></span></label>
+            <input type="checkbox" id="ovTruth"><label for="ovTruth"><span class="swatch" style="background:var(--signal)"></span><span data-i18n="ov.truth"></span></label>
+            <input type="checkbox" id="ovError"><label for="ovError"><span data-i18n="ov.error"></span></label>
+            <input type="checkbox" id="ovGrid"><label for="ovGrid"><span data-i18n="ov.grid"></span></label>
+          </div>
+        </div>
+        <div class="field">
+          <div class="row">
+            <label for="scaleRange" data-i18n="view.scale"></label>
+            <span class="val" id="scaleVal"></span>
+          </div>
+          <input type="range" id="scaleRange" min="0.3" max="4" step="0.1" value="1">
+        </div>
+      </div>
+    </aside>
+
+    <!-- ---------- inspector ---------- -->
+    <aside class="panel inspector">
+      <div class="insp-head">
+        <h2 data-i18n="insp.title"></h2>
+        <p data-i18n="insp.sub"></p>
+      </div>
+      <div class="insp-body">
+        <p class="hint" id="inspPick" data-i18n="insp.pick"></p>
+        <div id="inspContent" hidden>
+          <div class="pair">
+            <div class="tile">
+              <span class="cap" data-i18n="insp.winA"></span>
+              <canvas id="winA" width="240" height="240"></canvas>
+            </div>
+            <div class="tile">
+              <span class="cap" data-i18n="insp.winB"></span>
+              <canvas id="winB" width="240" height="240"></canvas>
+            </div>
+          </div>
+          <div class="tile" style="margin-top:12px">
+            <div class="corr-head">
+              <span class="cap" data-i18n="insp.corr"></span>
+              <span class="seg">
+                <input type="radio" name="corrMode" id="corr3d" value="3d" checked><label for="corr3d" data-i18n="insp.mode3d"></label>
+                <input type="radio" name="corrMode" id="corr2d" value="2d"><label for="corr2d" data-i18n="insp.mode2d"></label>
+              </span>
+            </div>
+            <canvas id="corr" width="520" height="340"></canvas>
+            <p class="hint" data-i18n="insp.corr.hint"></p>
+          </div>
+          <dl class="readouts" style="margin-top:12px">
+            <dt data-i18n="insp.pos"></dt><dd id="rPos"></dd>
+            <dt data-i18n="insp.measured"></dt><dd class="hi" id="rMeas"></dd>
+            <dt data-i18n="insp.truthv"></dt><dd class="sig" id="rTruth"></dd>
+            <dt data-i18n="insp.errv"></dt><dd id="rErr"></dd>
+            <dt data-i18n="insp.subpix"></dt><dd id="rSub"></dd>
+            <dt data-i18n="insp.shift"></dt><dd id="rShift"></dd>
+            <dt data-i18n="insp.peak"></dt><dd id="rPeak"></dd>
+            <dt data-i18n="insp.snr"></dt><dd id="rSnr"></dd>
+            <dt data-i18n="insp.status"></dt><dd><span class="verdict" id="rStatus"></span></dd>
+          </dl>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- ---------- readout ---------- -->
+  <section class="readout">
+    <div class="panel hero">
+      <span class="cap" data-i18n="m.rms"></span>
+      <span class="big" id="rmsVal">—<small> px</small></span>
+      <span class="sub" data-i18n="m.rms.sub"></span>
+      <span class="fraction" id="rmsFraction"></span>
+    </div>
+    <div class="panel facts">
+      <div>
+        <h3 data-i18n="group.process"></h3>
+        <table class="stats">
+          <tbody>
+            <tr><th data-i18n="m.vectors"></th><td id="stVectors">—</td></tr>
+            <tr><th data-i18n="m.valid"></th><td id="stValid">—</td></tr>
+            <tr><th data-i18n="m.peak"></th><td id="stPeak">—</td></tr>
+            <tr><th data-i18n="m.bias"></th><td id="stBias">—</td></tr>
+            <tr><th data-i18n="m.maxerr"></th><td id="stMax">—</td></tr>
+            <tr><th data-i18n="m.passes"></th><td id="stPasses">—</td></tr>
+            <tr><th data-i18n="m.time"></th><td id="stTime">—</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div>
+        <h3 data-i18n="diag.title"></h3>
+        <div class="diags" id="diags"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- tail ---------- -->
+  <div class="tail">
+    <section class="panel card">
+      <h2 data-i18n="upload.title"></h2>
+      <p class="hint" data-i18n="upload.hint"></p>
+      <div class="upload-row">
+        <div class="field">
+          <label for="fileA" data-i18n="upload.a"></label>
+          <input type="file" id="fileA" accept="image/*">
+        </div>
+        <div class="field">
+          <label for="fileB" data-i18n="upload.b"></label>
+          <input type="file" id="fileB" accept="image/*">
+        </div>
+      </div>
+      <div class="actions">
+        <button type="button" id="clearUpload" data-i18n="upload.clear"></button>
+        <button type="button" id="copyCsv" data-i18n="copy.csv"></button>
+      </div>
+      <p class="toast" id="toast"></p>
+      <textarea class="dump" id="dump" readonly hidden></textarea>
+    </section>
+
+    <section class="panel card">
+      <h2 data-i18n="about.title"></h2>
+      <p data-i18n="about.p1"></p>
+      <p data-i18n="about.p2"></p>
+      <p data-i18n="about.p3"></p>
+      <p data-i18n="about.p4"></p>
+      <p class="fineprint" data-i18n="about.ref" data-i18n-html></p>
+      <p class="fineprint" data-i18n="about.limit"></p>
+    </section>
+  </div>
+
+</div>
+<script>
+/* ===== js/fft.js ===== */
+/* PIV Simulator — FFT (radix-2, in-place) and FFT-based cross-correlation.
+ * No dependencies. Works as a classic browser script and under node (vm).
+ */
+(function (root) {
+  'use strict';
+
+  var plans = Object.create(null);
+
+  function plan(n) {
+    if (plans[n]) return plans[n];
+    if ((n & (n - 1)) !== 0) throw new Error('FFT size must be a power of two: ' + n);
+    var levels = Math.round(Math.log(n) / Math.LN2);
+    var rev = new Uint32Array(n);
+    for (var i = 0; i < n; i++) {
+      var x = i, r = 0;
+      for (var j = 0; j < levels; j++) { r = (r << 1) | (x & 1); x >>= 1; }
+      rev[i] = r;
+    }
+    var half = n >> 1;
+    var cos = new Float64Array(half), sin = new Float64Array(half);
+    for (var k = 0; k < half; k++) {
+      cos[k] = Math.cos(2 * Math.PI * k / n);
+      sin[k] = Math.sin(2 * Math.PI * k / n);
+    }
+    return (plans[n] = { n: n, levels: levels, rev: rev, cos: cos, sin: sin });
+  }
+
+  /* In-place 1-D complex FFT on a strided slice of re/im. */
+  function fft1d(re, im, off, stride, p, inverse) {
+    var n = p.n, rev = p.rev, cos = p.cos, sin = p.sin, i, j, t;
+    for (i = 0; i < n; i++) {
+      j = rev[i];
+      if (j > i) {
+        var a = off + i * stride, b = off + j * stride;
+        t = re[a]; re[a] = re[b]; re[b] = t;
+        t = im[a]; im[a] = im[b]; im[b] = t;
+      }
+    }
+    for (var size = 2; size <= n; size <<= 1) {
+      var h = size >> 1, tw = n / size;
+      for (var start = 0; start < n; start += size) {
+        for (var q = 0, k = 0; q < h; q++, k += tw) {
+          var c = cos[k], s = inverse ? sin[k] : -sin[k];
+          var iu = off + (start + q) * stride;
+          var il = off + (start + q + h) * stride;
+          var lr = re[il], li = im[il];
+          var tr = lr * c - li * s;
+          var ti = lr * s + li * c;
+          re[il] = re[iu] - tr; im[il] = im[iu] - ti;
+          re[iu] += tr; im[iu] += ti;
+        }
+      }
+    }
+    if (inverse) {
+      for (i = 0; i < n; i++) {
+        var idx = off + i * stride;
+        re[idx] /= n; im[idx] /= n;
+      }
+    }
+  }
+
+  /* In-place 2-D FFT of an n x n row-major complex image. */
+  function fft2(re, im, n, inverse) {
+    var p = plan(n), i;
+    for (i = 0; i < n; i++) fft1d(re, im, i * n, 1, p, inverse);   /* rows */
+    for (i = 0; i < n; i++) fft1d(re, im, i, n, p, inverse);       /* columns */
+  }
+
+  /* Scratch buffers, reused across calls for a given window size. */
+  var scratch = Object.create(null);
+  function buffers(n) {
+    var s = scratch[n];
+    if (!s) {
+      var m = n * n;
+      s = scratch[n] = {
+        ar: new Float64Array(m), ai: new Float64Array(m),
+        br: new Float64Array(m), bi: new Float64Array(m)
+      };
+    }
+    return s;
+  }
+
+  /* Normalised circular cross-correlation of two n x n windows.
+   * a, b are raw intensities; both are mean-subtracted here.
+   * out[iy*n+ix] holds the correlation for displacement (ix-n/2, iy-n/2),
+   * i.e. the map is already fftshift-ed with zero shift at the centre.
+   * Values are correlation coefficients in [-1, 1].
+   * Returns the peak correlation value found anywhere in the map.
+   */
+  function correlate(a, b, n, out) {
+    var m = n * n, s = buffers(n), ar = s.ar, ai = s.ai, br = s.br, bi = s.bi;
+    var i, ma = 0, mb = 0;
+    for (i = 0; i < m; i++) { ma += a[i]; mb += b[i]; }
+    ma /= m; mb /= m;
+    var va = 0, vb = 0;
+    for (i = 0; i < m; i++) {
+      var da = a[i] - ma, db = b[i] - mb;
+      ar[i] = da; ai[i] = 0;
+      br[i] = db; bi[i] = 0;
+      va += da * da; vb += db * db;
+    }
+    fft2(ar, ai, n, false);
+    fft2(br, bi, n, false);
+    /* conj(A) * B */
+    for (i = 0; i < m; i++) {
+      var xr = ar[i], xi = ai[i], yr = br[i], yi = bi[i];
+      ar[i] = xr * yr + xi * yi;
+      ai[i] = xr * yi - xi * yr;
+    }
+    fft2(ar, ai, n, true);
+    var norm = Math.sqrt(va * vb);
+    if (!(norm > 0)) { for (i = 0; i < m; i++) out[i] = 0; return 0; }
+    var half = n >> 1, peak = -Infinity;
+    for (var iy = 0; iy < n; iy++) {
+      var sy = (iy + half) & (n - 1);
+      for (var ix = 0; ix < n; ix++) {
+        var sx = (ix + half) & (n - 1);
+        var v = ar[sy * n + sx] / norm;
+        out[iy * n + ix] = v;
+        if (v > peak) peak = v;
+      }
+    }
+    return peak;
+  }
+
+  root.PIVSim = root.PIVSim || {};
+  root.PIVSim.FFT = { plan: plan, fft1d: fft1d, fft2: fft2, correlate: correlate };
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+/* ===== js/colormap.js ===== */
+/* PIV Simulator — colour ramps.
+ *
+ * Three jobs, three kinds of ramp:
+ *   speed / error  -> sequential, one hue family, monotone in lightness
+ *   vorticity      -> diverging, two hues with a neutral midpoint at zero
+ *   correlation    -> sequential dark-to-bright instrument readout
+ * Each ramp has a light-theme and a dark-theme instance; the dark one is
+ * chosen against the dark surface, not flipped automatically.
+ */
+(function (root) {
+  'use strict';
+
+  var RAMPS = {
+    speed: {
+      light: ['#F1F6F3', '#C3E1D5', '#84C6B0', '#41A085', '#177661', '#0A4239'],
+      dark: ['#07231F', '#0D4B3F', '#177E67', '#37AF8C', '#7ED6B6', '#DCF4E8']
+    },
+    error: {
+      light: ['#FBF4EF', '#F3D8C2', '#E8A578', '#D06E38', '#A3400F', '#5E1D02'],
+      dark: ['#1F1208', '#4A2409', '#7C3D0C', '#B4631F', '#E39A55', '#F8D9B3']
+    },
+    vorticity: {
+      light: ['#1A5480', '#4C8CB8', '#9FC2D9', '#EAEAE6', '#E2B49E', '#C36B4B', '#8C2C17'],
+      dark: ['#9BD6F6', '#5CA5D6', '#31658B', '#2A3336', '#8D4527', '#CA7340', '#F3B385']
+    },
+    correlation: {
+      light: ['#0B0A1A', '#2E1A50', '#6C2069', '#A62C60', '#D65340', '#F09B3C', '#F9E18B', '#FFFCEC'],
+      dark: ['#0B0A1A', '#2E1A50', '#6C2069', '#A62C60', '#D65340', '#F09B3C', '#F9E18B', '#FFFCEC']
+    }
+  };
+
+  function hex(h) {
+    return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+  }
+
+  var cache = Object.create(null);
+  function stops(name, theme) {
+    var key = name + '|' + theme;
+    if (!cache[key]) {
+      var r = RAMPS[name] || RAMPS.speed;
+      cache[key] = (r[theme] || r.light).map(hex);
+    }
+    return cache[key];
+  }
+
+  /* t in [0,1] -> [r,g,b] */
+  function sample(name, t, theme, out) {
+    var s = stops(name, theme);
+    t = t !== t ? 0 : (t < 0 ? 0 : (t > 1 ? 1 : t));
+    var f = t * (s.length - 1), i = Math.floor(f), w = f - i;
+    var a = s[i], b = s[Math.min(s.length - 1, i + 1)];
+    out = out || [0, 0, 0];
+    out[0] = a[0] + (b[0] - a[0]) * w;
+    out[1] = a[1] + (b[1] - a[1]) * w;
+    out[2] = a[2] + (b[2] - a[2]) * w;
+    return out;
+  }
+
+  function css(name, t, theme) {
+    var c = sample(name, t, theme);
+    return 'rgb(' + Math.round(c[0]) + ',' + Math.round(c[1]) + ',' + Math.round(c[2]) + ')';
+  }
+
+  /* CSS gradient string for a colour bar. lo/hi restrict it to part of the
+   * ramp, so a bar can show exactly the slice the marks were drawn from. */
+  function gradient(name, theme, deg, lo, hi) {
+    var parts = [], n = 12, c;
+    lo = lo || 0; hi = hi === undefined ? 1 : hi;
+    for (var i = 0; i <= n; i++) {
+      c = sample(name, lo + (hi - lo) * (i / n), theme);
+      parts.push('rgb(' + Math.round(c[0]) + ',' + Math.round(c[1]) + ',' + Math.round(c[2]) +
+        ') ' + Math.round(100 * i / n) + '%');
+    }
+    return 'linear-gradient(' + (deg === undefined ? 90 : deg) + 'deg,' + parts.join(',') + ')';
+  }
+
+  /* A readable range: [0,max] for sequential, symmetric for diverging. */
+  function niceRange(arr, status, symmetric, pct) {
+    var vals = [], i;
+    for (i = 0; i < arr.length; i++) {
+      if (status && status[i] === 2) continue;
+      var v = arr[i];
+      if (v === v && isFinite(v)) vals.push(symmetric ? Math.abs(v) : v);
+    }
+    if (!vals.length) return symmetric ? [-1, 1] : [0, 1];
+    vals.sort(function (a, b) { return a - b; });
+    var hiIdx = Math.min(vals.length - 1, Math.floor(vals.length * (pct === undefined ? 0.98 : pct)));
+    var hi = vals[hiIdx];
+    var step = Math.pow(10, Math.floor(Math.log(Math.max(1e-9, hi)) / Math.LN10));
+    var m = hi / step;
+    var mult = m <= 1.2 ? 1.2 : (m <= 2 ? 2 : (m <= 3 ? 3 : (m <= 5 ? 5 : 10)));
+    hi = mult * step;
+    if (symmetric) return [-hi, hi];
+    var lo = vals[0];
+    return [lo > 0 ? 0 : Math.floor(lo / step) * step, hi];
+  }
+
+  root.PIVSim = root.PIVSim || {};
+  root.PIVSim.Color = {
+    ramps: RAMPS, sample: sample, css: css, gradient: gradient, niceRange: niceRange
+  };
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+/* ===== js/flow.js ===== */
+/* PIV Simulator — analytic flow fields.
+ *
+ * Fields are defined in a normalised frame centred on the image:
+ *   X = (x - W/2) / R,  Y = (H/2 - y) / R,  R = min(W,H)/2
+ * so X,Y are O(1), Y points up (physics convention) while image y points down.
+ *
+ * Each field returns a dimensionless velocity (U,V); the app scales it so that
+ * the 95th-percentile speed maps to the requested particle displacement in
+ * pixels per frame. Steady fields, integrated with RK4 over one frame interval.
+ */
+(function (root) {
+  'use strict';
+
+  function sech2(t) { var c = Math.cosh(t); return 1 / (c * c); }
+
+  /* Lamb-Oseen vortex: tangential velocity (1 - exp(-r^2/rc^2)) / r */
+  function oseen(X, Y, xc, yc, gamma, rc, out) {
+    var dx = X - xc, dy = Y - yc;
+    var r2 = dx * dx + dy * dy;
+    var r = Math.sqrt(r2);
+    if (r < 1e-9) return;
+    var ut = gamma * (1 - Math.exp(-r2 / (rc * rc))) / r;
+    out[0] += -ut * dy / r;
+    out[1] += ut * dx / r;
+  }
+
+  var FIELDS = [
+    {
+      id: 'uniform', group: 'basic',
+      fn: function (X, Y, o) { o[0] = 1; o[1] = 0.28; }
+    },
+    {
+      id: 'channel', group: 'basic',
+      fn: function (X, Y, o) {
+        var h = 0.86, s = Y / h;
+        o[0] = s * s < 1 ? 1 - s * s : 0;
+        o[1] = 0;
+      },
+      walls: [-0.86, 0.86]
+    },
+    {
+      id: 'shear', group: 'shear',
+      fn: function (X, Y, o) {
+        var d = 0.16;
+        o[0] = 0.62 + 0.38 * Math.tanh(Y / d);
+        /* Kelvin-Helmholtz style roll-up of the interface */
+        o[1] = 0.22 * Math.sin(2 * Math.PI * X / 0.9) * sech2(Y / d);
+      }
+    },
+    {
+      id: 'jet', group: 'shear',
+      fn: function (X, Y, o) {
+        var b = 0.11 + 0.16 * (X + 1) * 0.5;
+        var f = sech2(Y / b);
+        o[0] = f;
+        o[1] = 0.28 * (Y / b) * f;
+      }
+    },
+    {
+      id: 'stagnation', group: 'shear',
+      fn: function (X, Y, o) { o[0] = X; o[1] = -(Y + 1); }
+    },
+    {
+      id: 'vortex', group: 'vortex',
+      fn: function (X, Y, o) { o[0] = 0; o[1] = 0; oseen(X, Y, 0, 0, 1, 0.34, o); }
+    },
+    {
+      id: 'vortexPair', group: 'vortex',
+      fn: function (X, Y, o) {
+        o[0] = 0; o[1] = 0;
+        oseen(X, Y, -0.42, 0, 1, 0.26, o);
+        oseen(X, Y, 0.42, 0, -1, 0.26, o);
+      }
+    },
+    {
+      id: 'rotation', group: 'vortex',
+      fn: function (X, Y, o) { o[0] = -Y; o[1] = X; }
+    },
+    {
+      id: 'cylinder', group: 'body',
+      fn: function (X, Y, o) {
+        var R = 0.36, r2 = X * X + Y * Y;
+        if (r2 < R * R) { o[0] = 0; o[1] = 0; return; }
+        var r4 = r2 * r2, R2 = R * R;
+        o[0] = 1 - R2 * (X * X - Y * Y) / r4;
+        o[1] = -2 * R2 * X * Y / r4;
+      },
+      mask: function (X, Y) { return X * X + Y * Y < 0.36 * 0.36; },
+      body: { x: 0, y: 0, r: 0.36 }
+    },
+    {
+      id: 'street', group: 'body',
+      fn: function (X, Y, o) {
+        var cx = -0.78, R = 0.17, r2 = (X - cx) * (X - cx) + Y * Y;
+        o[0] = 1; o[1] = 0;
+        if (r2 > R * R) {
+          var r4 = r2 * r2, R2 = R * R, dx = X - cx;
+          o[0] += -R2 * (dx * dx - Y * Y) / r4;
+          o[1] += -2 * R2 * dx * Y / r4;
+        } else { o[0] = 0; o[1] = 0; return; }
+        /* alternating shed vortices forming the wake */
+        var g = 0.46, rc = 0.15;
+        for (var k = 0; k < 4; k++) {
+          var vx = -0.34 + k * 0.52;
+          var vy = (k % 2 === 0) ? 0.15 : -0.15;
+          var sgn = (k % 2 === 0) ? -1 : 1;
+          oseen(X, Y, vx, vy, sgn * g * Math.exp(-0.12 * k), rc, o);
+        }
+      },
+      mask: function (X, Y) {
+        var dx = X + 0.78;
+        return dx * dx + Y * Y < 0.17 * 0.17;
+      },
+      body: { x: -0.78, y: 0, r: 0.17 }
+    }
+  ];
+
+  var byId = Object.create(null);
+  FIELDS.forEach(function (f) { byId[f.id] = f; });
+
+  /* A field instance bound to an image size and a displacement scale.
+   * velocity(x, y, out) gives pixel velocity per frame in image coordinates.
+   */
+  function bind(id, width, height, maxDisp) {
+    var f = byId[id] || byId.uniform;
+    var R = Math.min(width, height) / 2;
+    var cx = width / 2, cy = height / 2;
+    var tmp = [0, 0];
+
+    /* Normalise so the 95th-percentile speed equals 1. */
+    var samples = [];
+    for (var j = 0; j <= 64; j++) {
+      for (var i = 0; i <= 64; i++) {
+        var X = (i / 64) * (width / R) - width / (2 * R);
+        var Y = height / (2 * R) - (j / 64) * (height / R);
+        if (f.mask && f.mask(X, Y)) continue;
+        tmp[0] = 0; tmp[1] = 0; f.fn(X, Y, tmp);
+        samples.push(Math.hypot(tmp[0], tmp[1]));
+      }
+    }
+    samples.sort(function (a, b) { return a - b; });
+    var ref = samples[Math.floor(samples.length * 0.95)] || 1;
+    var k = maxDisp / (ref || 1);
+
+    function velocity(x, y, out) {
+      var X = (x - cx) / R, Y = (cy - y) / R;
+      tmp[0] = 0; tmp[1] = 0;
+      f.fn(X, Y, tmp);
+      out[0] = tmp[0] * k;
+      out[1] = -tmp[1] * k;   /* back to image (y-down) coordinates */
+      return out;
+    }
+
+    /* Displacement over one frame interval: RK4 on dx/dtau = velocity, tau in [0,1]. */
+    var k1 = [0, 0], k2 = [0, 0], k3 = [0, 0], k4 = [0, 0];
+    function displacement(x, y, out, steps) {
+      var n = steps || 4, h = 1 / n, px = x, py = y;
+      for (var s = 0; s < n; s++) {
+        velocity(px, py, k1);
+        velocity(px + 0.5 * h * k1[0], py + 0.5 * h * k1[1], k2);
+        velocity(px + 0.5 * h * k2[0], py + 0.5 * h * k2[1], k3);
+        velocity(px + h * k3[0], py + h * k3[1], k4);
+        px += h * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]) / 6;
+        py += h * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]) / 6;
+      }
+      out[0] = px - x; out[1] = py - y;
+      return out;
+    }
+
+    function maskedPx(x, y) {
+      if (!f.mask) return false;
+      return f.mask((x - cx) / R, (cy - y) / R);
+    }
+
+    return {
+      id: f.id, def: f, width: width, height: height, scale: k,
+      velocity: velocity, displacement: displacement, masked: maskedPx,
+      /* body outline in pixel coordinates, for drawing */
+      bodyPx: f.body ? { x: cx + f.body.x * R, y: cy - f.body.y * R, r: f.body.r * R } : null,
+      wallsPx: f.walls ? f.walls.map(function (Y) { return cy - Y * R; }) : null
+    };
+  }
+
+  root.PIVSim = root.PIVSim || {};
+  root.PIVSim.Flow = { fields: FIELDS, bind: bind };
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+/* ===== js/synth.js ===== */
+/* PIV Simulator — synthetic particle image pairs.
+ *
+ * Builds the double-frame recording a PIV camera would deliver: tracer particles
+ * with Gaussian intensity profiles, a Gaussian laser light-sheet, 8-bit
+ * quantisation, read noise, and loss of particle pairs (out-of-plane motion).
+ * Because the displacement field is analytic, the exact answer is known.
+ */
+(function (root) {
+  'use strict';
+
+  /* mulberry32 — small seeded PRNG so every run is reproducible */
+  function rng(seed) {
+    var s = seed >>> 0;
+    return function () {
+      s = (s + 0x6D2B79F5) >>> 0;
+      var t = s;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function gauss(rand) {
+    var u = 1 - rand(), v = rand();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+
+  /* Add one Gaussian particle image: I = I0 * exp(-8 r^2 / dp^2) */
+  function splat(img, W, H, x, y, I0, dp) {
+    var inv = 8 / (dp * dp);
+    var rad = Math.ceil(dp * 1.3) + 1;
+    var x0 = Math.max(0, Math.floor(x - rad)), x1 = Math.min(W - 1, Math.ceil(x + rad));
+    var y0 = Math.max(0, Math.floor(y - rad)), y1 = Math.min(H - 1, Math.ceil(y + rad));
+    for (var iy = y0; iy <= y1; iy++) {
+      var dy = iy + 0.5 - y, row = iy * W;
+      for (var ix = x0; ix <= x1; ix++) {
+        var dx = ix + 0.5 - x;
+        var e = inv * (dx * dx + dy * dy);
+        if (e < 12) img[row + ix] += I0 * Math.exp(-e);
+      }
+    }
+  }
+
+  /* opts: width, height, flow (bound flow), nPerWindow (per 32x32 window),
+   *       dp (particle image diameter, px), noise (% of full scale),
+   *       background (counts), loss (fraction of pairs lost per frame), seed
+   * returns { a, b, width, height, count, particles }
+   */
+  function generate(opts) {
+    var W = opts.width, H = opts.height, flow = opts.flow;
+    var dp = opts.dp, noise = opts.noise, bg = opts.background || 6;
+    var loss = opts.loss || 0;
+    var rand = rng(opts.seed || 1);
+
+    var ppp = (opts.nPerWindow || 12) / (32 * 32);
+    var margin = Math.ceil(3 * dp + Math.abs(opts.maxDisp || 8) + 4);
+    var domW = W + 2 * margin, domH = H + 2 * margin;
+    var N = Math.max(1, Math.round(ppp * domW * domH));
+
+    var a = new Float32Array(W * H), b = new Float32Array(W * H);
+    var pxa = new Float32Array(N), pya = new Float32Array(N);
+    var pxb = new Float32Array(N), pyb = new Float32Array(N);
+    var pint = new Float32Array(N);
+    var d = [0, 0], i;
+
+    var peak = 205;   /* mean peak intensity in counts, leaves headroom */
+
+    for (i = 0; i < N; i++) {
+      var x = -margin + rand() * domW;
+      var y = -margin + rand() * domH;
+      /* position across the light sheet, in units of the sheet half-thickness */
+      var z = (rand() * 2 - 1) * 1.25;
+      var I0 = peak * Math.exp(-2 * z * z) * (0.65 + 0.55 * rand());
+
+      var lost = rand() < loss;
+      var xb, yb;
+      if (lost) {
+        /* left the light sheet: an unrelated particle appears somewhere else */
+        xb = -margin + rand() * domW;
+        yb = -margin + rand() * domH;
+      } else {
+        flow.displacement(x, y, d, 4);
+        xb = x + d[0]; yb = y + d[1];
+      }
+
+      pxa[i] = x; pya[i] = y; pxb[i] = xb; pyb[i] = yb; pint[i] = I0;
+
+      var inA = !(flow.masked && flow.masked(x, y));
+      var inB = !(flow.masked && flow.masked(xb, yb));
+      if (inA) splat(a, W, H, x, y, I0, dp);
+      if (inB) splat(b, W, H, xb, yb, I0, dp);
+    }
+
+    /* sensor: background + read noise + 8-bit quantisation (the source of peak locking) */
+    var sigma = noise * 2.55;
+    for (i = 0; i < a.length; i++) {
+      var va = a[i] + bg + (sigma > 0 ? gauss(rand) * sigma : 0);
+      var vb = b[i] + bg + (sigma > 0 ? gauss(rand) * sigma : 0);
+      a[i] = Math.max(0, Math.min(255, Math.round(va)));
+      b[i] = Math.max(0, Math.min(255, Math.round(vb)));
+    }
+
+    return {
+      a: a, b: b, width: W, height: H, count: N,
+      nPerWindow: opts.nPerWindow,
+      particles: { xa: pxa, ya: pya, xb: pxb, yb: pyb, I: pint }
+    };
+  }
+
+  /* Convert an uploaded image (ImageData) to a luminance Float32Array. */
+  function fromImageData(data) {
+    var n = data.width * data.height, out = new Float32Array(n), d = data.data;
+    for (var i = 0; i < n; i++) {
+      out[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+    }
+    return out;
+  }
+
+  root.PIVSim = root.PIVSim || {};
+  root.PIVSim.Synth = { generate: generate, fromImageData: fromImageData, rng: rng };
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+/* ===== js/piv.js ===== */
+/* PIV Simulator — the cross-correlation engine.
+ *
+ * Multi-pass FFT cross-correlation with symmetric window shifting,
+ * three-point sub-pixel peak fitting, primary-peak-ratio SNR, and the
+ * universal median test for outlier detection (Westerweel & Scarano, 2005).
+ */
+(function (root) {
+  'use strict';
+
+  var FFT = root.PIVSim.FFT;
+
+  /* ---- window extraction (edge pixels replicated) ---------------------- */
+  function extract(img, W, H, cx, cy, win, offx, offy, dst) {
+    var x0 = Math.round(cx - win / 2) + offx;
+    var y0 = Math.round(cy - win / 2) + offy;
+    for (var j = 0; j < win; j++) {
+      var sy = y0 + j;
+      sy = sy < 0 ? 0 : (sy > H - 1 ? H - 1 : sy);
+      var srow = sy * W, drow = j * win;
+      for (var i = 0; i < win; i++) {
+        var sx = x0 + i;
+        sx = sx < 0 ? 0 : (sx > W - 1 ? W - 1 : sx);
+        dst[drow + i] = img[srow + sx];
+      }
+    }
+  }
+
+  /* ---- sub-pixel peak fitting ------------------------------------------ */
+  function subpixel(cm, c0, cp, mode) {
+    var den;
+    if (mode === 'centroid') {
+      var s = cm + c0 + cp;
+      return s > 0 ? (cp - cm) / s : 0;
+    }
+    if (mode !== 'parabolic' && cm > 0 && c0 > 0 && cp > 0) {
+      var lm = Math.log(cm), l0 = Math.log(c0), lp = Math.log(cp);
+      den = 2 * lm - 4 * l0 + 2 * lp;
+      if (Math.abs(den) > 1e-12) {
+        var d = (lm - lp) / den;
+        if (d > -1 && d < 1) return d;
+      }
+    }
+    den = 2 * cm - 4 * c0 + 2 * cp;
+    if (Math.abs(den) > 1e-12) {
+      var p = (cm - cp) / den;
+      if (p > -1 && p < 1) return p;
+    }
+    return 0;
+  }
+
+  /* Locate the peak of a correlation map and fit it to sub-pixel accuracy.
+   * Returns { dx, dy, peak, snr, ix, iy } with dx,dy in pixels. */
+  function peakFit(map, win, limit, mode) {
+    var half = win >> 1, best = -Infinity, bx = half, by = half, ix, iy;
+    var lo = Math.max(1, half - limit), hi = Math.min(win - 2, half + limit);
+    for (iy = lo; iy <= hi; iy++) {
+      for (ix = lo; ix <= hi; ix++) {
+        var v = map[iy * win + ix];
+        if (v > best) { best = v; bx = ix; by = iy; }
+      }
+    }
+    /* second highest peak outside a 5x5 block around the primary one */
+    var second = -Infinity;
+    for (iy = lo; iy <= hi; iy++) {
+      for (ix = lo; ix <= hi; ix++) {
+        if (Math.abs(ix - bx) <= 2 && Math.abs(iy - by) <= 2) continue;
+        var w = map[iy * win + ix];
+        if (w > second) second = w;
+      }
+    }
+    var dxs = subpixel(map[by * win + bx - 1], best, map[by * win + bx + 1], mode);
+    var dys = subpixel(map[(by - 1) * win + bx], best, map[(by + 1) * win + bx], mode);
+    return {
+      dx: (bx - half) + dxs, dy: (by - half) + dys,
+      sx: dxs, sy: dys,                 /* what the sub-pixel fit contributed */
+      peak: best, snr: second > 1e-6 ? best / second : 99,
+      ix: bx, iy: by
+    };
+  }
+
+  /* ---- grid ------------------------------------------------------------- */
+  function makeGrid(W, H, win, overlap) {
+    var step = Math.max(1, Math.round(win * (1 - overlap)));
+    var nx = Math.max(1, Math.floor((W - win) / step) + 1);
+    var ny = Math.max(1, Math.floor((H - win) / step) + 1);
+    var x0 = (W - ((nx - 1) * step + win)) / 2 + win / 2;
+    var y0 = (H - ((ny - 1) * step + win)) / 2 + win / 2;
+    var xs = new Float32Array(nx), ys = new Float32Array(ny), i;
+    for (i = 0; i < nx; i++) xs[i] = x0 + i * step;
+    for (i = 0; i < ny; i++) ys[i] = y0 + i * step;
+    return { win: win, step: step, nx: nx, ny: ny, xs: xs, ys: ys, n: nx * ny };
+  }
+
+  /* bilinear sample of a previous pass onto an arbitrary point */
+  function sampleField(g, arr, x, y) {
+    var fx = (x - g.xs[0]) / g.step, fy = (y - g.ys[0]) / g.step;
+    var i0 = Math.floor(fx), j0 = Math.floor(fy);
+    i0 = i0 < 0 ? 0 : (i0 > g.nx - 1 ? g.nx - 1 : i0);
+    j0 = j0 < 0 ? 0 : (j0 > g.ny - 1 ? g.ny - 1 : j0);
+    var i1 = Math.min(g.nx - 1, i0 + 1), j1 = Math.min(g.ny - 1, j0 + 1);
+    var tx = Math.max(0, Math.min(1, fx - i0)), ty = Math.max(0, Math.min(1, fy - j0));
+    var a = arr[j0 * g.nx + i0], b = arr[j0 * g.nx + i1];
+    var c = arr[j1 * g.nx + i0], d = arr[j1 * g.nx + i1];
+    return (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty;
+  }
+
+  /* ---- universal median test ------------------------------------------- */
+  function median(list, n) {
+    if (n === 0) return 0;
+    var s = list.slice(0, n).sort(function (a, b) { return a - b; });
+    var h = n >> 1;
+    return n % 2 ? s[h] : 0.5 * (s[h - 1] + s[h]);
+  }
+
+  /* Universal median test. The full 3x3 stencil gets the nominal threshold;
+   * a border vector, whose neighbours all sit on one side, sees a relaxed one -
+   * otherwise a plain velocity gradient reads as an outlier along every edge.
+   *
+   * status: 0 valid, 1 median-test outlier, 2 masked, 3 weak correlation.
+   * Vectors flagged 1 or 3 are replaced by the median of their valid neighbours.
+   */
+  function validate(g, u, v, status, threshold) {
+    var nx = g.nx, ny = g.ny, n = nx * ny;
+    var un = new Float64Array(8), vn = new Float64Array(8), res = new Float64Array(8);
+    var outliers = 0, weak = 0, i, j, k, di, dj, ii, jj, kk, q;
+
+    for (i = 0; i < n; i++) if (status[i] === 3) weak++;
+
+    /* gather only trusted neighbours (valid so far) */
+    function gather(i, j) {
+      var m = 0;
+      for (dj = -1; dj <= 1; dj++) {
+        for (di = -1; di <= 1; di++) {
+          if (!di && !dj) continue;
+          ii = i + di; jj = j + dj;
+          if (ii < 0 || jj < 0 || ii >= nx || jj >= ny) continue;
+          kk = jj * nx + ii;
+          if (status[kk] !== 0) continue;
+          un[m] = u[kk]; vn[m] = v[kk]; m++;
+        }
+      }
+      return m;
+    }
+
+    for (j = 0; j < ny; j++) {
+      for (i = 0; i < nx; i++) {
+        k = j * nx + i;
+        if (status[k] !== 0) continue;
+        var m = gather(i, j);
+        if (m < 4) continue;
+        var thr = (m === 8) ? threshold : threshold * 2.5;
+        var um = median(un, m), vm = median(vn, m);
+        for (q = 0; q < m; q++) res[q] = Math.abs(un[q] - um);
+        var ru = Math.abs(u[k] - um) / (median(res, m) + 0.1);
+        for (q = 0; q < m; q++) res[q] = Math.abs(vn[q] - vm);
+        var rv = Math.abs(v[k] - vm) / (median(res, m) + 0.1);
+        if (Math.max(ru, rv) > thr) { status[k] = 1; outliers++; }
+      }
+    }
+
+    /* fill every rejected vector from its valid neighbours */
+    for (var pass = 0; pass < 3; pass++) {
+      var uu = Float32Array.from(u), vv = Float32Array.from(v), changed = 0;
+      for (j = 0; j < ny; j++) {
+        for (i = 0; i < nx; i++) {
+          k = j * nx + i;
+          if (status[k] !== 1 && status[k] !== 3) continue;
+          var su = 0, sv = 0, c = 0;
+          for (dj = -1; dj <= 1; dj++) {
+            for (di = -1; di <= 1; di++) {
+              if (!di && !dj) continue;
+              ii = i + di; jj = j + dj;
+              if (ii < 0 || jj < 0 || ii >= nx || jj >= ny) continue;
+              kk = jj * nx + ii;
+              if (status[kk] === 2) continue;
+              if (pass === 0 && status[kk] !== 0) continue;
+              su += u[kk]; sv += v[kk]; c++;
+            }
+          }
+          if (c) { uu[k] = su / c; vv[k] = sv / c; changed++; }
+        }
+      }
+      u.set(uu); v.set(vv);
+      if (!changed) break;
+    }
+    return { outliers: outliers, weak: weak };
+  }
+
+  /* Predictor field for the next pass: masked holes filled from their
+   * neighbours, then one light 3x3 smoothing so a single bad spot cannot
+   * drag the finer pass off the peak. */
+  function predictor(g, src, status) {
+    var nx = g.nx, ny = g.ny, n = nx * ny;
+    var f = Float32Array.from(src), i, j, k;
+    for (var it = 0; it < 2; it++) {
+      for (j = 0; j < ny; j++) {
+        for (i = 0; i < nx; i++) {
+          k = j * nx + i;
+          if (status[k] !== 2) continue;
+          var s = 0, m = 0;
+          for (var dj = -1; dj <= 1; dj++) {
+            for (var di = -1; di <= 1; di++) {
+              var ii = i + di, jj = j + dj;
+              if (ii < 0 || jj < 0 || ii >= nx || jj >= ny) continue;
+              var kk = jj * nx + ii;
+              if (status[kk] === 2) continue;
+              s += f[kk]; m++;
+            }
+          }
+          if (m) f[k] = s / m;
+        }
+      }
+    }
+    var out = new Float32Array(n);
+    for (j = 0; j < ny; j++) {
+      for (i = 0; i < nx; i++) {
+        var t = 0, c = 0;
+        for (var b = -1; b <= 1; b++) {
+          for (var a = -1; a <= 1; a++) {
+            var x = i + a, y = j + b;
+            if (x < 0 || y < 0 || x >= nx || y >= ny) continue;
+            t += f[y * nx + x]; c++;
+          }
+        }
+        out[j * nx + i] = t / c;
+      }
+    }
+    return out;
+  }
+
+  /* ---- main ------------------------------------------------------------- */
+  /* cfg: imgA, imgB, width, height, win, overlap, passes, subpixel,
+   *      threshold, replace, masked(x,y), snrMin */
+  function run(cfg) {
+    var t0 = (root.performance || Date).now();
+    var W = cfg.width, H = cfg.height;
+    var nPasses = Math.max(1, cfg.passes || 1);
+    var mode = cfg.subpixel || 'gauss';
+    var prev = null, prevU = null, prevV = null, grid = null;
+    var u = null, v = null;
+    var passInfo = [];
+
+    /* The first pass must still resolve the flow: a window wider than a quarter
+     * of the image gives too few vectors for the median test to police. */
+    var capWin = Math.pow(2, Math.floor(Math.log(Math.min(W, H) / 4) / Math.LN2));
+    var maxWin = Math.max(cfg.win, Math.min(capWin, cfg.win * Math.pow(2, nPasses - 1)));
+    var sched = [];
+    for (var q = 0; q < nPasses; q++) {
+      var wq = Math.min(cfg.win * Math.pow(2, nPasses - 1 - q), maxWin);
+      if (sched[sched.length - 1] !== wq) sched.push(wq);   /* capping can repeat */
+    }
+    nPasses = sched.length;
+
+    for (var p = 0; p < nPasses; p++) {
+      var win = sched[p];
+      /* coarse passes overlap more so the outlier test has real neighbours */
+      var overlap = (p === nPasses - 1) ? cfg.overlap : Math.max(cfg.overlap, 0.5);
+      grid = makeGrid(W, H, win, overlap);
+      var m = grid.n;
+      u = new Float32Array(m); v = new Float32Array(m);
+      var uRaw = new Float32Array(m), vRaw = new Float32Array(m);
+      var snr = new Float32Array(m), corr = new Float32Array(m);
+      var status = new Uint8Array(m);
+      var shx = new Int16Array(m), shy = new Int16Array(m);
+
+      var wa = new Float64Array(win * win), wb = new Float64Array(win * win);
+      var map = new Float64Array(win * win);
+      /* the quarter rule: a displacement beyond win/4 cannot be trusted, and
+       * allowing the search that far out only invites wrap-around peaks */
+      var limit = (p === 0) ? Math.max(3, Math.round(win / 3)) : Math.max(3, win >> 2);
+
+      for (var j = 0; j < grid.ny; j++) {
+        for (var i = 0; i < grid.nx; i++) {
+          var k = j * grid.nx + i;
+          var cx = grid.xs[i], cy = grid.ys[j];
+
+          if (cfg.masked && cfg.masked(cx, cy)) { status[k] = 2; continue; }
+
+          var px = 0, py = 0;
+          if (prev) {
+            px = sampleField(prev, prevU, cx, cy);
+            py = sampleField(prev, prevV, cx, cy);
+          }
+          var sx = Math.round(px), sy = Math.round(py);
+          var offBx = Math.round(sx / 2), offAx = offBx - sx;
+          var offBy = Math.round(sy / 2), offAy = offBy - sy;
+          shx[k] = sx; shy[k] = sy;
+
+          extract(cfg.imgA, W, H, cx, cy, win, offAx, offAy, wa);
+          extract(cfg.imgB, W, H, cx, cy, win, offBx, offBy, wb);
+          FFT.correlate(wa, wb, win, map);
+          var pk = peakFit(map, win, limit, mode);
+
+          u[k] = uRaw[k] = sx + pk.dx;
+          v[k] = vRaw[k] = sy + pk.dy;
+          snr[k] = pk.snr; corr[k] = pk.peak;
+          if (pk.snr < (cfg.snrMin || 1.2) || pk.peak < (cfg.corrMin || 0.05)) status[k] = 3;
+        }
+        if (cfg.onProgress) cfg.onProgress((p + (j + 1) / grid.ny) / nPasses);
+      }
+
+      var vinfo = validate(grid, u, v, status, cfg.threshold || 2);
+      passInfo.push({
+        win: win, step: grid.step, vectors: m,
+        outliers: vinfo.outliers, weak: vinfo.weak
+      });
+
+      prev = grid;
+      prevU = predictor(grid, u, status);
+      prevV = predictor(grid, v, status);
+      if (p === nPasses - 1) {
+        return {
+          grid: grid, win: win, step: grid.step, nx: grid.nx, ny: grid.ny,
+          xs: grid.xs, ys: grid.ys,
+          u: u, v: v, uRaw: uRaw, vRaw: vRaw, snr: snr, corr: corr,
+          status: status, shiftX: shx, shiftY: shy,
+          passes: passInfo, subpixel: mode,
+          ms: (root.performance || Date).now() - t0
+        };
+      }
+    }
+  }
+
+  /* Recompute one interrogation spot for the inspector panel. */
+  function inspect(cfg, res, index) {
+    var i = index % res.nx, j = Math.floor(index / res.nx);
+    var win = res.win, cx = res.xs[i], cy = res.ys[j];
+    var sx = res.shiftX[index], sy = res.shiftY[index];
+    var offBx = Math.round(sx / 2), offAx = offBx - sx;
+    var offBy = Math.round(sy / 2), offAy = offBy - sy;
+    var wa = new Float64Array(win * win), wb = new Float64Array(win * win);
+    var map = new Float64Array(win * win);
+    extract(cfg.imgA, cfg.width, cfg.height, cx, cy, win, offAx, offAy, wa);
+    extract(cfg.imgB, cfg.width, cfg.height, cx, cy, win, offBx, offBy, wb);
+    FFT.correlate(wa, wb, win, map);
+    var limit = res.passes.length > 1 ? Math.max(3, win >> 2) : Math.max(3, Math.round(win / 3));
+    var pk = peakFit(map, win, limit, res.subpixel);
+    return {
+      i: i, j: j, cx: cx, cy: cy, win: win, a: wa, b: wb, map: map,
+      shiftX: sx, shiftY: sy, peak: pk, limit: limit,
+      u: sx + pk.dx, v: sy + pk.dy
+    };
+  }
+
+  /* Derived scalar fields: speed, vorticity and divergence (per frame). */
+  function derive(res) {
+    var nx = res.nx, ny = res.ny, h = res.step, n = nx * ny;
+    var mag = new Float32Array(n), vort = new Float32Array(n), div = new Float32Array(n);
+    /* Central difference inside, one-sided at an image border or next to a
+     * masked cell: a clamped central difference would halve every gradient
+     * along the edge, and differencing across a body wall would invent
+     * vorticity that is not in the flow. */
+    var st = res.status;
+    function ok(i, j) {
+      return i >= 0 && j >= 0 && i < nx && j < ny && st[j * nx + i] !== 2;
+    }
+    function ddx(arr, i, j) {
+      var k = j * nx, l = ok(i - 1, j), r = ok(i + 1, j);
+      if (l && r) return (arr[k + i + 1] - arr[k + i - 1]) / (2 * h);
+      if (r) return (arr[k + i + 1] - arr[k + i]) / h;
+      if (l) return (arr[k + i] - arr[k + i - 1]) / h;
+      return 0;
+    }
+    function ddy(arr, i, j) {
+      var d = ok(i, j - 1), u = ok(i, j + 1);
+      if (d && u) return (arr[(j + 1) * nx + i] - arr[(j - 1) * nx + i]) / (2 * h);
+      if (u) return (arr[(j + 1) * nx + i] - arr[j * nx + i]) / h;
+      if (d) return (arr[j * nx + i] - arr[(j - 1) * nx + i]) / h;
+      return 0;
+    }
+    for (var j = 0; j < ny; j++) {
+      for (var i = 0; i < nx; i++) {
+        var k = j * nx + i;
+        mag[k] = Math.hypot(res.u[k], res.v[k]);
+        var dvdx = ddx(res.v, i, j);
+        var dudy = ddy(res.u, i, j);
+        var dudx = ddx(res.u, i, j);
+        var dvdy = ddy(res.v, i, j);
+        /* image y points down, so in-plane vorticity flips sign */
+        vort[k] = -(dvdx - dudy);
+        div[k] = dudx + dvdy;
+      }
+    }
+    return { mag: mag, vort: vort, div: div };
+  }
+
+  /* Exact displacement at every vector location, plus error statistics. */
+  function truth(res, flow) {
+    var n = res.nx * res.ny;
+    var tu = new Float32Array(n), tv = new Float32Array(n);
+    var err = new Float32Array(n), d = [0, 0];
+    var sum2 = 0, sumx = 0, sumy = 0, cnt = 0, max = 0;
+    for (var j = 0; j < res.ny; j++) {
+      for (var i = 0; i < res.nx; i++) {
+        var k = j * res.nx + i;
+        flow.displacement(res.xs[i], res.ys[j], d, 4);
+        tu[k] = d[0]; tv[k] = d[1];
+        if (res.status[k] === 2) { err[k] = NaN; continue; }
+        var ex = res.u[k] - d[0], ey = res.v[k] - d[1];
+        err[k] = Math.hypot(ex, ey);
+        sum2 += ex * ex + ey * ey; sumx += ex; sumy += ey; cnt++;
+        if (err[k] > max) max = err[k];
+      }
+    }
+    return {
+      tu: tu, tv: tv, err: err, count: cnt,
+      rms: cnt ? Math.sqrt(sum2 / cnt) : 0,
+      biasX: cnt ? sumx / cnt : 0, biasY: cnt ? sumy / cnt : 0,
+      max: max
+    };
+  }
+
+  root.PIVSim.PIV = {
+    run: run, inspect: inspect, derive: derive, truth: truth,
+    extract: extract, peakFit: peakFit, makeGrid: makeGrid, subpixel: subpixel
+  };
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+/* ===== js/render.js ===== */
+/* PIV Simulator — canvas drawing.
+ * Everything here takes image-pixel coordinates; the caller sets the transform.
+ */
+(function (root) {
+  'use strict';
+
+  var Color = root.PIVSim.Color;
+
+  function offscreen(w, h) {
+    var c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    return c;
+  }
+
+  /* ---- particle images -------------------------------------------------- */
+
+  /* Grayscale with a faint 532 nm cast, the way a Nd:YAG-lit frame reads. */
+  function particleImage(ctx, img, W, H) {
+    var out = ctx.createImageData(W, H), d = out.data;
+    /* display gamma only — the correlation still runs on the raw counts */
+    var lut = new Float32Array(256), t;
+    for (t = 0; t < 256; t++) lut[t] = 255 * Math.pow(t / 255, 0.78);
+    for (var i = 0, j = 0; i < img.length; i++, j += 4) {
+      var v = lut[img[i] | 0];
+      d[j] = v * 0.80;
+      d[j + 1] = v;
+      d[j + 2] = v * 0.86;
+      d[j + 3] = 255;
+    }
+    return out;
+  }
+
+  /* Frame A in laser green, frame B in magenta: every paired particle shows as
+   * a green dot with its magenta partner a few pixels away. */
+  function pairImage(ctx, a, b, W, H) {
+    var out = ctx.createImageData(W, H), d = out.data;
+    var lut = new Float32Array(256), t;
+    for (t = 0; t < 256; t++) lut[t] = 255 * Math.pow(t / 255, 0.78);
+    for (var i = 0, j = 0; i < a.length; i++, j += 4) {
+      var va = lut[a[i] | 0], vb = lut[b[i] | 0];
+      d[j] = vb * 0.95;
+      d[j + 1] = va;
+      d[j + 2] = vb * 0.95;
+      d[j + 3] = 255;
+    }
+    return out;
+  }
+
+  /* ---- scalar field raster ---------------------------------------------- */
+
+  function fieldImage(ctx, res, scalar, range, ramp, theme, W, H, maskFn) {
+    var out = ctx.createImageData(W, H), d = out.data;
+    var nx = res.nx, ny = res.ny, step = res.step;
+    var x0 = res.xs[0], y0 = res.ys[0];
+    var lo = range[0], span = (range[1] - range[0]) || 1;
+    var rgb = [0, 0, 0], st = res.status;
+
+    function val(i, j) {
+      i = i < 0 ? 0 : (i > nx - 1 ? nx - 1 : i);
+      j = j < 0 ? 0 : (j > ny - 1 ? ny - 1 : j);
+      return { v: scalar[j * nx + i], m: st[j * nx + i] === 2 };
+    }
+
+    for (var py = 0; py < H; py++) {
+      var fy = (py + 0.5 - y0) / step;
+      var j0 = Math.floor(fy), ty = fy - j0;
+      for (var px = 0; px < W; px++) {
+        var fx = (px + 0.5 - x0) / step;
+        var i0 = Math.floor(fx), tx = fx - i0;
+        var q00 = val(i0, j0), q10 = val(i0 + 1, j0), q01 = val(i0, j0 + 1), q11 = val(i0 + 1, j0 + 1);
+        var k = (py * W + px) * 4;
+        var near = (tx < 0.5 ? (ty < 0.5 ? q00 : q01) : (ty < 0.5 ? q10 : q11));
+        /* inside the body there is no data — cut the hole on the real geometry,
+         * not on the blocky set of masked vector cells */
+        if (maskFn ? maskFn(px + 0.5, py + 0.5) : near.m) { d[k + 3] = 0; continue; }
+        var v00 = q00.m ? near.v : q00.v, v10 = q10.m ? near.v : q10.v;
+        var v01 = q01.m ? near.v : q01.v, v11 = q11.m ? near.v : q11.v;
+        var v = (v00 * (1 - tx) + v10 * tx) * (1 - ty) + (v01 * (1 - tx) + v11 * tx) * ty;
+        Color.sample(ramp, (v - lo) / span, theme, rgb);
+        d[k] = rgb[0]; d[k + 1] = rgb[1]; d[k + 2] = rgb[2]; d[k + 3] = 255;
+      }
+    }
+    return out;
+  }
+
+  /* ---- vectors ---------------------------------------------------------- */
+
+  /* opts: scale, lineWidth, color | ramp+range+theme, limit (progressive draw),
+   *       showRejected, rejectedColor */
+  function vectors(ctx, res, opts) {
+    var n = res.nx * res.ny, limit = opts.limit === undefined ? n : opts.limit;
+    var s = opts.scale, lw = opts.lineWidth || 1.1;
+    var buckets = 14, paths = [], i;
+    var colored = !!opts.ramp;
+    for (i = 0; i < (colored ? buckets : 1); i++) paths.push(new Path2D());
+    var rejected = new Path2D(), hasRejected = false;
+    var lo = opts.range ? opts.range[0] : 0;
+    var span = opts.range ? (opts.range[1] - opts.range[0]) || 1 : 1;
+
+    for (var k = 0; k < limit && k < n; k++) {
+      if (res.status[k] === 2) continue;
+      var i0 = k % res.nx, j0 = (k - i0) / res.nx;
+      var x = res.xs[i0], y = res.ys[j0];
+      var u = res.u[k] * s, v = res.v[k] * s;
+      var len = Math.hypot(u, v);
+      var p;
+      if (res.status[k] !== 0 && opts.showRejected) { p = rejected; hasRejected = true; }
+      else if (colored) {
+        var t = (Math.hypot(res.u[k], res.v[k]) - lo) / span;
+        var b = Math.floor(t * buckets);
+        p = paths[b < 0 ? 0 : (b > buckets - 1 ? buckets - 1 : b)];
+      } else p = paths[0];
+
+      if (len < 0.35) {           /* effectively still: a dot reads better than a stub */
+        p.moveTo(x - 0.35, y);
+        p.lineTo(x + 0.35, y);
+        continue;
+      }
+      p.moveTo(x, y);
+      p.lineTo(x + u, y + v);
+      var hl = Math.min(len * 0.42, Math.max(2.2, s * 0.9));
+      var ux = u / len, uy = v / len, a = 0.42;
+      p.moveTo(x + u, y + v);
+      p.lineTo(x + u - hl * (ux * Math.cos(a) - uy * Math.sin(a)),
+               y + v - hl * (ux * Math.sin(a) + uy * Math.cos(a)));
+      p.moveTo(x + u, y + v);
+      p.lineTo(x + u - hl * (ux * Math.cos(-a) - uy * Math.sin(-a)),
+               y + v - hl * (ux * Math.sin(-a) + uy * Math.cos(-a)));
+    }
+
+    ctx.save();
+    ctx.lineWidth = lw;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    if (opts.halo) {             /* dark outline keeps arrows legible on any ground */
+      ctx.strokeStyle = opts.halo;
+      ctx.lineWidth = lw + 1.4;
+      for (i = 0; i < paths.length; i++) ctx.stroke(paths[i]);
+      if (hasRejected) ctx.stroke(rejected);
+      ctx.lineWidth = lw;
+    }
+    var rlo = opts.rampLo || 0;
+    for (i = 0; i < paths.length; i++) {
+      ctx.strokeStyle = colored
+        ? Color.css(opts.ramp, rlo + (1 - rlo) * ((i + 0.5) / buckets), opts.theme)
+        : opts.color;
+      ctx.stroke(paths[i]);
+    }
+    if (hasRejected) {
+      ctx.strokeStyle = opts.rejectedColor || '#E0574B';
+      ctx.stroke(rejected);
+    }
+    ctx.restore();
+  }
+
+  /* Reference arrows from the analytic solution, drawn under the measured ones. */
+  function truthVectors(ctx, res, truth, opts) {
+    var p = new Path2D();
+    for (var k = 0; k < res.nx * res.ny; k++) {
+      if (res.status[k] === 2) continue;
+      var i0 = k % res.nx, j0 = (k - i0) / res.nx;
+      var x = res.xs[i0], y = res.ys[j0];
+      var u = truth.tu[k] * opts.scale, v = truth.tv[k] * opts.scale;
+      if (Math.hypot(u, v) < 0.3) continue;
+      p.moveTo(x, y);
+      p.lineTo(x + u, y + v);
+    }
+    ctx.save();
+    ctx.strokeStyle = opts.color;
+    ctx.lineWidth = opts.lineWidth || 2.4;
+    ctx.lineCap = 'round';
+    ctx.globalAlpha = opts.alpha === undefined ? 0.9 : opts.alpha;
+    ctx.stroke(p);
+    ctx.restore();
+  }
+
+  /* Error vectors, magnified: measured minus exact. */
+  function errorVectors(ctx, res, truth, opts) {
+    var p = new Path2D();
+    for (var k = 0; k < res.nx * res.ny; k++) {
+      if (res.status[k] === 2) continue;
+      var i0 = k % res.nx, j0 = (k - i0) / res.nx;
+      var x = res.xs[i0], y = res.ys[j0];
+      var u = (res.u[k] - truth.tu[k]) * opts.scale, v = (res.v[k] - truth.tv[k]) * opts.scale;
+      p.moveTo(x, y);
+      p.lineTo(x + u, y + v);
+    }
+    ctx.save();
+    ctx.strokeStyle = opts.color;
+    ctx.lineWidth = opts.lineWidth || 1;
+    ctx.lineCap = 'round';
+    ctx.stroke(p);
+    ctx.restore();
+  }
+
+  function grid(ctx, res, color, lw) {
+    var p = new Path2D(), half = res.step / 2;
+    var x0 = res.xs[0] - half, x1 = res.xs[res.nx - 1] + half;
+    var y0 = res.ys[0] - half, y1 = res.ys[res.ny - 1] + half;
+    for (var i = 0; i < res.nx; i++) {
+      var x = res.xs[i] + half;
+      p.moveTo(x, y0); p.lineTo(x, y1);
+    }
+    for (var j = 0; j < res.ny; j++) {
+      var y = res.ys[j] + half;
+      p.moveTo(x0, y); p.lineTo(x1, y);
+    }
+    p.moveTo(x0, y0); p.lineTo(x1, y0); p.lineTo(x1, y1); p.lineTo(x0, y1); p.closePath();
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lw || 0.6;
+    ctx.stroke(p);
+    ctx.restore();
+  }
+
+  function body(ctx, flow, fill, stroke) {
+    if (!flow || !flow.bodyPx) return;
+    var b = flow.bodyPx;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r, 0, 2 * Math.PI);
+    ctx.fillStyle = fill; ctx.fill();
+    ctx.strokeStyle = stroke; ctx.lineWidth = 1.2; ctx.stroke();
+    ctx.restore();
+  }
+
+  function windowMarker(ctx, cx, cy, win, color, lw) {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lw || 1.6;
+    ctx.setLineDash([]);
+    ctx.strokeRect(Math.round(cx - win / 2), Math.round(cy - win / 2), win, win);
+    ctx.restore();
+  }
+
+  /* ---- inspector panels ------------------------------------------------- */
+
+  /* Interrogation window blown up, one sensor pixel per block. */
+  function zoom(canvas, arr, win, tint) {
+    var ctx = canvas.getContext('2d');
+    var src = offscreen(win, win), sctx = src.getContext('2d');
+    var data = sctx.createImageData(win, win), d = data.data, i, j;
+    var max = 1;
+    for (i = 0; i < arr.length; i++) if (arr[i] > max) max = arr[i];
+    for (i = 0, j = 0; i < arr.length; i++, j += 4) {
+      var v = 255 * Math.pow(Math.max(0, arr[i]) / max, 0.85);
+      d[j] = v * (tint ? 0.80 : 0.95);
+      d[j + 1] = v;
+      d[j + 2] = v * (tint ? 0.86 : 0.95);
+      d[j + 3] = 255;
+    }
+    sctx.putImageData(data, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(src, 0, 0, canvas.width, canvas.height);
+  }
+
+  /* Correlation plane as a heat map, with the peak called out. */
+  function corrMap(canvas, insp, half, theme, ink) {
+    var win = insp.win, map = insp.map, ctx = canvas.getContext('2d');
+    var n = 2 * half + 1, c0 = win >> 1;
+    var lo = Infinity, hi = -Infinity, i, j, v;
+    for (j = 0; j < n; j++) {
+      for (i = 0; i < n; i++) {
+        v = map[(c0 - half + j) * win + (c0 - half + i)];
+        if (v < lo) lo = v; if (v > hi) hi = v;
+      }
+    }
+    var span = (hi - lo) || 1;
+    var src = offscreen(n, n), sctx = src.getContext('2d');
+    var data = sctx.createImageData(n, n), d = data.data, rgb = [0, 0, 0];
+    for (j = 0; j < n; j++) {
+      for (i = 0; i < n; i++) {
+        v = (map[(c0 - half + j) * win + (c0 - half + i)] - lo) / span;
+        Color.sample('correlation', v, theme, rgb);
+        var k = (j * n + i) * 4;
+        d[k] = rgb[0]; d[k + 1] = rgb[1]; d[k + 2] = rgb[2]; d[k + 3] = 255;
+      }
+    }
+    sctx.putImageData(data, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    /* the plane is square; centre it in whatever box the panel gives us */
+    var box = Math.min(canvas.width, canvas.height);
+    var ox = (canvas.width - box) / 2, oy = (canvas.height - box) / 2;
+    ctx.drawImage(src, ox, oy, box, box);
+
+    /* peak crosshair, in sub-pixel position */
+    var s = box / n;
+    var px = ox + (insp.peak.dx + half + 0.5) * s;
+    var py = oy + (insp.peak.dy + half + 0.5) * s;
+    ctx.save();
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 1.25;
+    ctx.beginPath();
+    ctx.moveTo(px - 9, py); ctx.lineTo(px - 2.5, py);
+    ctx.moveTo(px + 2.5, py); ctx.lineTo(px + 9, py);
+    ctx.moveTo(px, py - 9); ctx.lineTo(px, py - 2.5);
+    ctx.moveTo(px, py + 2.5); ctx.lineTo(px, py + 9);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(px, py, 2, 0, 2 * Math.PI);
+    ctx.fillStyle = ink; ctx.fill();
+    /* zero-displacement reference */
+    ctx.globalAlpha = 0.5;
+    ctx.setLineDash([2, 3]);
+    ctx.beginPath();
+    ctx.arc(ox + (half + 0.5) * s, oy + (half + 0.5) * s, Math.max(3, s * 0.45), 0, 2 * Math.PI);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /* The correlation plane as a surface — the iconic PIV picture. */
+  function corrSurface(canvas, insp, half, theme, ink, accent) {
+    var win = insp.win, map = insp.map, ctx = canvas.getContext('2d');
+    var n = 2 * half + 1, c0 = win >> 1, i, j, v;
+    var stride = Math.max(1, Math.round(n / 26));
+    var m = Math.floor((n - 1) / stride) + 1;
+    var z = new Float64Array(m * m), lo = Infinity, hi = -Infinity;
+    for (j = 0; j < m; j++) {
+      for (i = 0; i < m; i++) {
+        v = map[(c0 - half + j * stride) * win + (c0 - half + i * stride)];
+        z[j * m + i] = v;
+        if (v < lo) lo = v; if (v > hi) hi = v;
+      }
+    }
+    var span = (hi - lo) || 1;
+    var W = canvas.width, H = canvas.height;
+    ctx.clearRect(0, 0, W, H);
+    var ax = W * 0.40 / (m - 1), ay = H * 0.17 / (m - 1), az = H * 0.56;
+    var cx = W / 2, cy = H * 0.74;
+    function proj(i, j, h) {
+      return [cx + (i - (m - 1) / 2) * ax - (j - (m - 1) / 2) * ax,
+              cy + ((i - (m - 1) / 2) + (j - (m - 1) / 2)) * ay - h * az];
+    }
+    var rgb = [0, 0, 0];
+    /* painter's order: far cells (small i+j) first */
+    var cells = [];
+    for (j = 0; j < m - 1; j++) for (i = 0; i < m - 1; i++) cells.push([i, j]);
+    cells.sort(function (a, b) { return (a[0] + a[1]) - (b[0] + b[1]); });
+    ctx.lineWidth = 0.5;
+    for (var q = 0; q < cells.length; q++) {
+      var ii = cells[q][0], jj = cells[q][1];
+      var h00 = (z[jj * m + ii] - lo) / span, h10 = (z[jj * m + ii + 1] - lo) / span;
+      var h01 = (z[(jj + 1) * m + ii] - lo) / span, h11 = (z[(jj + 1) * m + ii + 1] - lo) / span;
+      var p00 = proj(ii, jj, h00), p10 = proj(ii + 1, jj, h10);
+      var p11 = proj(ii + 1, jj + 1, h11), p01 = proj(ii, jj + 1, h01);
+      var hm = (h00 + h10 + h01 + h11) / 4;
+      Color.sample('correlation', hm, theme, rgb);
+      ctx.beginPath();
+      ctx.moveTo(p00[0], p00[1]); ctx.lineTo(p10[0], p10[1]);
+      ctx.lineTo(p11[0], p11[1]); ctx.lineTo(p01[0], p01[1]);
+      ctx.closePath();
+      ctx.fillStyle = 'rgb(' + Math.round(rgb[0]) + ',' + Math.round(rgb[1]) + ',' + Math.round(rgb[2]) + ')';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+      ctx.stroke();
+    }
+    /* marker on the fitted peak */
+    var pi = (insp.peak.ix - (c0 - half)) / stride, pj = (insp.peak.iy - (c0 - half)) / stride;
+    var top = proj(pi, pj, 1.0);
+    var base = proj(pi, pj, (insp.peak.peak - lo) / span);
+    ctx.save();
+    ctx.strokeStyle = accent;
+    ctx.setLineDash([3, 3]);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(base[0], base[1] - 4); ctx.lineTo(top[0], top[1] - 12);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.arc(base[0], base[1], 2.5, 0, 2 * Math.PI);
+    ctx.fillStyle = accent; ctx.fill();
+    ctx.restore();
+  }
+
+  root.PIVSim.Render = {
+    offscreen: offscreen, particleImage: particleImage, pairImage: pairImage,
+    fieldImage: fieldImage, vectors: vectors, truthVectors: truthVectors,
+    errorVectors: errorVectors, grid: grid, body: body, windowMarker: windowMarker,
+    zoom: zoom, corrMap: corrMap, corrSurface: corrSurface
+  };
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+/* ===== js/i18n.js ===== */
+/* PIV Simulator — Korean / English strings.
+ * The DOM carries only data-i18n keys; all copy lives here.
+ */
+(function (root) {
+  'use strict';
+
+  var D = {
+    ko: {
+      'doc.title': 'PIV 시뮬레이터',
+      'app.eyebrow': 'PARTICLE IMAGE VELOCIMETRY',
+      'app.title': '두 장의 사진에서 유동장을 꺼내기',
+      'app.lede': '레이저로 얇게 자른 물속에 작은 입자를 뿌리고, 아주 짧은 Δt 간격으로 두 장을 찍습니다. 입자들이 어디로 몇 픽셀 갔는지 컴퓨터가 찾아내면 — 그것이 속도장입니다. 아래 버튼을 누르면 그 계산이 실제로 돌아갑니다.',
+      'app.langLabel': 'English',
+      'app.themeLabel': '테마 전환',
+
+      'step.1.n': '1단계',
+      'step.1.t': '씨딩',
+      'step.1.d': '유체에 빛을 잘 반사하는 작은 입자를 뿌립니다. 입자는 유체를 따라갑니다.',
+      'step.2.n': '2단계',
+      'step.2.t': '이중 노출',
+      'step.2.d': '레이저 시트로 한 면만 밝히고 Δt 간격으로 두 장을 찍습니다.',
+      'step.3.n': '3단계',
+      'step.3.t': '상호상관',
+      'step.3.d': '영상을 작은 창으로 나누고, 두 창을 밀어가며 가장 잘 겹치는 위치를 찾습니다.',
+      'step.4.n': '4단계',
+      'step.4.t': '속도장',
+      'step.4.d': '창마다 벡터 하나. 수백 개가 모이면 유동 구조가 드러납니다.',
+
+      'run': 'PIV 계산 실행',
+      'run.again': '다시 계산',
+      'run.busy': '계산 중…',
+      'reshoot': '새로 촬영',
+      'reshoot.hint': '입자를 새로 뿌려 다시 찍습니다',
+
+      'group.flow': '유동',
+      'group.record': '촬영 조건',
+      'group.process': '계산 조건',
+      'group.view': '보기',
+
+      'flow.kind': '유동 종류',
+      'flow.disp': '입자 변위 Δx',
+      'flow.disp.hint': '프레임 간 대표 변위입니다. Δt를 키우면 같이 커집니다.',
+      'grp.basic': '기본',
+      'grp.shear': '전단 유동',
+      'grp.vortex': '소용돌이',
+      'grp.body': '물체 주위',
+      'f.uniform': '균일 유동',
+      'f.channel': '채널 유동 (포아즈이유)',
+      'f.shear': '혼합층 (전단층)',
+      'f.jet': '자유 분류 (제트)',
+      'f.stagnation': '정체점 유동',
+      'f.vortex': '램-오신 소용돌이',
+      'f.vortexPair': '소용돌이 쌍',
+      'f.rotation': '강체 회전',
+      'f.cylinder': '원기둥 주위 (퍼텐셜)',
+      'f.street': '카르만 소용돌이 열',
+
+      'rec.seed': '창당 입자 수 N_I',
+      'rec.seed.hint': '32×32 창 하나에 들어가는 입자 수. 8개 이상이면 상관 피크가 안정적입니다.',
+      'rec.dp': '입자상 지름 dτ',
+      'rec.dp.hint': '2~3 px가 최적입니다. 너무 작으면 부화소 보간이 픽셀에 달라붙습니다(peak locking).',
+      'rec.noise': '센서 노이즈',
+      'rec.loss': '면외 손실',
+      'rec.loss.hint': '레이저 시트를 벗어나 짝을 잃은 입자의 비율입니다.',
+      'rec.size': '영상 크기',
+      'proc.win': '조사창 크기',
+      'proc.win.hint': '이 창 안의 입자들이 함께 얼마나 움직였는지를 한 개의 벡터로 냅니다.',
+      'proc.overlap': '창 중첩률',
+      'proc.passes': '패스 수',
+      'proc.passes.hint': '큰 창으로 먼저 대략 찾고, 그 값만큼 창을 밀어 작은 창으로 다시 찾습니다.',
+      'proc.subpixel': '부화소 피팅',
+      'sp.gauss': '가우스 3점',
+      'sp.parabolic': '포물선 3점',
+      'sp.centroid': '무게중심',
+      'proc.threshold': '이상치 검정 문턱값',
+
+      'view.bg': '배경',
+      'bg.a': '입자영상 A',
+      'bg.blink': 'A ↔ B 반짝임',
+      'bg.pair': 'A·B 겹쳐보기',
+      'bg.speed': '속도 크기',
+      'bg.vort': '와도',
+      'bg.err': '오차 크기',
+      'bg.div': '발산 (0이어야 함)',
+      'view.overlay': '겹쳐 그리기',
+      'ov.vectors': '측정 벡터',
+      'ov.truth': '참값',
+      'ov.error': '오차 ×10',
+      'ov.grid': '조사창 격자',
+      'view.scale': '화살표 길이',
+
+      'stage.hint': '영상 위를 클릭하면 그 조사창의 계산 과정을 오른쪽에서 볼 수 있습니다.',
+      'stage.empty': '아직 계산하지 않았습니다. 위의 “PIV 계산 실행”을 누르세요.',
+      'stage.blink': 'A와 B를 번갈아 보여줍니다 — 입자가 흐르는 방향이 보입니다.',
+      'legend.speed': '속도 크기 (px/프레임)',
+      'legend.vort': '와도 (1/프레임)',
+      'legend.err': '오차 크기 (px)',
+      'legend.div': '발산 (1/프레임)',
+      'legend.ccw': '반시계',
+      'legend.cw': '시계',
+      'legend.measured': '측정 벡터',
+      'legend.truth': '참값',
+      'legend.rejected': '탈락(대체됨)',
+
+      'insp.title': '상관 현미경',
+      'insp.sub': '조사창 한 개에서 벌어지는 일',
+      'insp.pick': '왼쪽 영상을 클릭해 조사창을 고르세요.',
+      'insp.winA': '창 A — 시각 t',
+      'insp.winB': '창 B — 시각 t+Δt',
+      'insp.corr': '상관면 R(Δx, Δy)',
+      'insp.corr.hint': '두 창을 모든 방향으로 밀어보며 겹침 정도를 계산한 지도입니다. 가장 높은 곳이 곧 변위입니다.',
+      'insp.mode2d': '평면',
+      'insp.mode3d': '입체',
+      'insp.measured': '측정 변위',
+      'insp.truthv': '참값',
+      'insp.errv': '오차',
+      'insp.peak': '상관 피크 R',
+      'insp.snr': '피크 비 (SNR)',
+      'insp.shift': '예측 이동량',
+      'insp.pos': '창 위치',
+      'insp.subpix': '부화소 보정',
+      'insp.status': '판정',
+      'st.ok': '유효',
+      'st.outlier': '중앙값 검정 탈락',
+      'st.masked': '마스크 영역',
+      'st.weak': '상관 신호 부족',
+
+      'm.rms': 'RMS 오차',
+      'm.rms.sub': '참값을 아는 합성 영상이므로 채점할 수 있습니다',
+      'm.rms.px': 'px',
+      'm.vectors': '벡터 수',
+      'm.valid': '유효 벡터',
+      'm.peak': '평균 상관 피크',
+      'm.time': '계산 시간',
+      'm.bias': '평균 편향',
+      'm.maxerr': '최대 오차',
+      'm.passes': '패스 구성',
+      'm.subpx': '부화소 정밀도',
+      'm.subpx.sub': '센서 픽셀 한 칸의',
+
+      'diag.title': '측정 상태 점검',
+      'diag.seed': '창당 입자 수',
+      'diag.seed.ok': '상관 피크가 안정적입니다',
+      'diag.seed.warn': '입자가 적어 헛피크가 생깁니다',
+      'diag.quarter': '1/4 규칙 Δx ≤ 창/4',
+      'diag.quarter.ok': '변위가 창 안에 잘 들어옵니다',
+      'diag.quarter.warn': '변위가 창에 비해 큽니다 — 창을 키우거나 Δt를 줄이세요',
+      'diag.dp': '입자상 지름',
+      'diag.dp.ok': '부화소 피팅에 적당합니다',
+      'diag.dp.warn': '1.5 px 이하는 peak locking을 일으킵니다',
+      'diag.snr': '평균 피크 비',
+      'diag.snr.ok': '신호가 충분합니다',
+      'diag.snr.warn': '상관 신호가 약합니다 — 손실·노이즈를 줄이세요',
+      'diag.valid': '유효 벡터율',
+      'diag.valid.ok': '실험 데이터로 쓸 수 있는 수준입니다',
+      'diag.valid.warn': '탈락이 많습니다',
+
+      'upload.title': '내 영상으로 계산하기',
+      'upload.hint': '실제 PIV 영상 두 장(A, B)을 올리면 같은 엔진으로 계산합니다. 참값이 없으므로 오차 대신 상관 신호만 표시됩니다.',
+      'upload.a': '영상 A',
+      'upload.b': '영상 B',
+      'upload.clear': '합성 영상으로 돌아가기',
+      'upload.size': '두 영상의 크기가 다릅니다. A의 크기에 맞춰 자릅니다.',
+      'copy.csv': '벡터장 CSV 복사',
+      'copy.done': '복사했습니다',
+      'copy.fail': '아래 내용을 직접 복사하세요',
+
+      'about.title': '이 시뮬레이터가 실제로 하는 계산',
+      'about.p1': '입자 영상은 가우스 강도 분포를 가진 입자들을 해석적 유동장에 따라 이동시켜 만듭니다. 8비트 양자화, 읽기 노이즈, 레이저 시트 두께에 따른 밝기 변화, 면외 손실까지 포함합니다.',
+      'about.p2': '계산은 FFT 기반 상호상관입니다. 창의 평균을 뺀 뒤 R = IFFT(conj(FFT(A))·FFT(B))로 상관면을 얻고, 피크 주변 3점에 가우스를 맞춰 부화소 변위를 구합니다. 다중 패스에서는 앞 패스의 결과만큼 두 창을 대칭으로 밀어 잔여 변위만 다시 찾습니다.',
+      'about.p3': '이상치는 보편 중앙값 검정(universal median test)으로 걸러내고 이웃 중앙값으로 대체합니다. 와도와 발산은 벡터 격자에서 중앙차분으로 계산합니다(경계는 한쪽 차분).',
+      'about.p4': '합성 영상의 변위는 해석적으로 알고 있으므로, 측정값과 참값의 차이가 곧 이 방법의 오차입니다. 잘 맞춘 조건에서 RMS 오차는 센서 픽셀의 1/20 수준까지 내려갑니다.',
+      'about.ref': '참고: Raffel et al., <i>Particle Image Velocimetry: A Practical Guide</i>; Westerweel &amp; Scarano, <i>Exp. Fluids</i> 39 (2005) 1096 — 보편 중앙값 검정.',
+      'about.limit': '한계: 단일 상관, 창 변형 없음, 2성분(2D2C)만. 실제 상용 PIV의 창 변형·가중·앙상블 상관은 넣지 않았습니다.'
+    },
+
+    en: {
+      'doc.title': 'PIV Simulator',
+      'app.eyebrow': 'PARTICLE IMAGE VELOCIMETRY',
+      'app.title': 'Pulling a flow field out of two photographs',
+      'app.lede': 'Seed a liquid with tiny tracer particles, light one thin plane with a laser, and take two frames a few microseconds apart. Find how far each patch of particles moved, and you have the velocity field. Press the button and the computation runs for real.',
+      'app.langLabel': '한국어',
+      'app.themeLabel': 'Switch theme',
+
+      'step.1.n': 'Step 1',
+      'step.1.t': 'Seeding',
+      'step.1.d': 'Tracer particles small enough to follow the flow, bright enough to photograph.',
+      'step.2.n': 'Step 2',
+      'step.2.t': 'Double exposure',
+      'step.2.d': 'A laser sheet lights one plane; the camera takes two frames separated by Δt.',
+      'step.3.n': 'Step 3',
+      'step.3.t': 'Cross-correlation',
+      'step.3.d': 'Cut both frames into small windows and slide each pair until the particles line up.',
+      'step.4.n': 'Step 4',
+      'step.4.t': 'Velocity field',
+      'step.4.d': 'One vector per window. A few hundred of them, and the structure appears.',
+
+      'run': 'Run the PIV computation',
+      'run.again': 'Run again',
+      'run.busy': 'Computing…',
+      'reshoot': 'New exposure',
+      'reshoot.hint': 'Re-seed the flow and shoot a fresh pair',
+
+      'group.flow': 'Flow',
+      'group.record': 'Recording',
+      'group.process': 'Processing',
+      'group.view': 'View',
+
+      'flow.kind': 'Flow field',
+      'flow.disp': 'Particle displacement Δx',
+      'flow.disp.hint': 'Representative displacement between frames. It grows with Δt.',
+      'grp.basic': 'Basic',
+      'grp.shear': 'Shear flows',
+      'grp.vortex': 'Vortices',
+      'grp.body': 'Around a body',
+      'f.uniform': 'Uniform flow',
+      'f.channel': 'Channel flow (Poiseuille)',
+      'f.shear': 'Mixing layer',
+      'f.jet': 'Free jet',
+      'f.stagnation': 'Stagnation flow',
+      'f.vortex': 'Lamb–Oseen vortex',
+      'f.vortexPair': 'Counter-rotating pair',
+      'f.rotation': 'Solid-body rotation',
+      'f.cylinder': 'Cylinder (potential flow)',
+      'f.street': 'Kármán vortex street',
+
+      'rec.seed': 'Particles per window N_I',
+      'rec.seed.hint': 'Count inside one 32×32 window. Eight or more keeps the correlation peak steady.',
+      'rec.dp': 'Particle image diameter dτ',
+      'rec.dp.hint': '2–3 px is the sweet spot. Smaller, and the sub-pixel fit locks onto whole pixels.',
+      'rec.noise': 'Sensor noise',
+      'rec.loss': 'Out-of-plane loss',
+      'rec.loss.hint': 'Fraction of particles that leave the light sheet and lose their partner.',
+      'rec.size': 'Image size',
+      'proc.win': 'Interrogation window',
+      'proc.win.hint': 'Everything inside one window is reduced to a single displacement vector.',
+      'proc.overlap': 'Window overlap',
+      'proc.passes': 'Passes',
+      'proc.passes.hint': 'A coarse pass finds the rough shift; finer passes offset the windows by it and measure only what is left.',
+      'proc.subpixel': 'Sub-pixel fit',
+      'sp.gauss': 'Gaussian, 3-point',
+      'sp.parabolic': 'Parabolic, 3-point',
+      'sp.centroid': 'Centroid',
+      'proc.threshold': 'Outlier test threshold',
+
+      'view.bg': 'Background',
+      'bg.a': 'Particle image A',
+      'bg.blink': 'Blink A ↔ B',
+      'bg.pair': 'A and B together',
+      'bg.speed': 'Speed',
+      'bg.vort': 'Vorticity',
+      'bg.err': 'Error magnitude',
+      'bg.div': 'Divergence (should be 0)',
+      'view.overlay': 'Overlays',
+      'ov.vectors': 'Measured vectors',
+      'ov.truth': 'Exact answer',
+      'ov.error': 'Error ×10',
+      'ov.grid': 'Window grid',
+      'view.scale': 'Arrow length',
+
+      'stage.hint': 'Click anywhere on the image to open that interrogation window on the right.',
+      'stage.empty': 'Nothing computed yet — press “Run the PIV computation” above.',
+      'stage.blink': 'Frames A and B alternating — you can see which way the particles go.',
+      'legend.speed': 'Speed (px/frame)',
+      'legend.vort': 'Vorticity (1/frame)',
+      'legend.err': 'Error magnitude (px)',
+      'legend.div': 'Divergence (1/frame)',
+      'legend.ccw': 'counter-clockwise',
+      'legend.cw': 'clockwise',
+      'legend.measured': 'measured',
+      'legend.truth': 'exact',
+      'legend.rejected': 'rejected (replaced)',
+
+      'insp.title': 'Correlation microscope',
+      'insp.sub': 'What happens inside one window',
+      'insp.pick': 'Click the image on the left to pick a window.',
+      'insp.winA': 'Window A — time t',
+      'insp.winB': 'Window B — time t+Δt',
+      'insp.corr': 'Correlation plane R(Δx, Δy)',
+      'insp.corr.hint': 'How well the two windows overlap at every possible shift. The highest point is the displacement.',
+      'insp.mode2d': 'Plane',
+      'insp.mode3d': 'Surface',
+      'insp.measured': 'Measured',
+      'insp.truthv': 'Exact',
+      'insp.errv': 'Error',
+      'insp.peak': 'Peak R',
+      'insp.snr': 'Peak ratio (SNR)',
+      'insp.shift': 'Predictor shift',
+      'insp.pos': 'Window centre',
+      'insp.subpix': 'Sub-pixel part',
+      'insp.status': 'Verdict',
+      'st.ok': 'valid',
+      'st.outlier': 'rejected by median test',
+      'st.masked': 'masked region',
+      'st.weak': 'weak correlation',
+
+      'm.rms': 'RMS error',
+      'm.rms.sub': 'The synthetic pair has an exact answer, so the result can be graded',
+      'm.rms.px': 'px',
+      'm.vectors': 'Vectors',
+      'm.valid': 'Valid',
+      'm.peak': 'Mean peak R',
+      'm.time': 'Compute time',
+      'm.bias': 'Mean bias',
+      'm.maxerr': 'Worst error',
+      'm.passes': 'Pass schedule',
+      'm.subpx': 'Sub-pixel resolution',
+      'm.subpx.sub': 'of one sensor pixel',
+
+      'diag.title': 'Measurement health',
+      'diag.seed': 'Particles per window',
+      'diag.seed.ok': 'the correlation peak is well fed',
+      'diag.seed.warn': 'too few particles — spurious peaks appear',
+      'diag.quarter': 'Quarter rule Δx ≤ win/4',
+      'diag.quarter.ok': 'the displacement stays inside the window',
+      'diag.quarter.warn': 'displacement too large — widen the window or shorten Δt',
+      'diag.dp': 'Particle image diameter',
+      'diag.dp.ok': 'good for sub-pixel fitting',
+      'diag.dp.warn': 'below 1.5 px the fit locks onto whole pixels',
+      'diag.snr': 'Mean peak ratio',
+      'diag.snr.ok': 'signal is strong',
+      'diag.snr.warn': 'weak correlation — reduce loss or noise',
+      'diag.valid': 'Valid vectors',
+      'diag.valid.ok': 'good enough to use as data',
+      'diag.valid.warn': 'too many rejected vectors',
+
+      'upload.title': 'Use your own images',
+      'upload.hint': 'Load a real PIV pair and the same engine processes it. There is no exact answer to compare against, so only the correlation numbers are shown.',
+      'upload.a': 'Image A',
+      'upload.b': 'Image B',
+      'upload.clear': 'Back to synthetic images',
+      'upload.size': 'The two images differ in size; B is cropped to match A.',
+      'copy.csv': 'Copy vector field as CSV',
+      'copy.done': 'Copied',
+      'copy.fail': 'Copy the text below',
+
+      'about.title': 'What this simulator actually computes',
+      'about.p1': 'The particle images are built by advecting Gaussian particle images through an analytic flow field, with 8-bit quantisation, read noise, a Gaussian light-sheet intensity profile, and loss of pairs out of the plane.',
+      'about.p2': 'Processing is FFT cross-correlation: each window is mean-subtracted, R = IFFT(conj(FFT(A))·FFT(B)) gives the correlation plane, and a Gaussian through the three points around the peak gives the sub-pixel displacement. In a multi-pass run both windows are shifted symmetrically by the previous estimate, so only the residual is measured.',
+      'about.p3': 'Outliers are caught with the universal median test and replaced by the median of their neighbours. Vorticity and divergence come from central differences on the vector grid, one-sided along the borders.',
+      'about.p4': 'Because the synthetic displacement field is known analytically, the difference between measurement and truth is the real error of the method. Well set up, the RMS error drops to about a twentieth of a sensor pixel.',
+      'about.ref': 'References: Raffel et al., <i>Particle Image Velocimetry: A Practical Guide</i>; Westerweel &amp; Scarano, <i>Exp. Fluids</i> 39 (2005) 1096 for the universal median test.',
+      'about.limit': 'Limits: single correlation, no window deformation, two components only (2D2C). The window deformation, weighting and ensemble correlation of commercial PIV codes are not included.'
+    }
+  };
+
+  var lang = 'ko';
+
+  function t(key) {
+    var s = D[lang] && D[lang][key];
+    if (s === undefined) s = D.ko[key];
+    return s === undefined ? key : s;
+  }
+
+  function apply(next, scope) {
+    if (next) lang = D[next] ? next : 'ko';
+    var r = scope || document;
+    var nodes = r.querySelectorAll('[data-i18n]'), i;
+    for (i = 0; i < nodes.length; i++) {
+      var k = nodes[i].getAttribute('data-i18n');
+      if (nodes[i].hasAttribute('data-i18n-html')) nodes[i].innerHTML = t(k);
+      else nodes[i].textContent = t(k);
+    }
+    nodes = r.querySelectorAll('[data-i18n-title]');
+    for (i = 0; i < nodes.length; i++) {
+      nodes[i].setAttribute('title', t(nodes[i].getAttribute('data-i18n-title')));
+    }
+    nodes = r.querySelectorAll('[data-i18n-aria]');
+    for (i = 0; i < nodes.length; i++) {
+      nodes[i].setAttribute('aria-label', t(nodes[i].getAttribute('data-i18n-aria')));
+    }
+    if (document.documentElement) document.documentElement.lang = lang;
+    return lang;
+  }
+
+  root.PIVSim = root.PIVSim || {};
+  root.PIVSim.I18N = {
+    dict: D, t: t, apply: apply,
+    get lang() { return lang; },
+    set lang(v) { apply(v); }
+  };
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+/* ===== js/app.js ===== */
+/* PIV Simulator — UI controller.
+ * Owns the state, drives synthesis -> correlation -> drawing, and keeps the
+ * inspector, the metrics and the diagnostics in step with each other.
+ */
+(function (root) {
+  'use strict';
+
+  var Flow = root.PIVSim.Flow, Synth = root.PIVSim.Synth, PIV = root.PIVSim.PIV;
+  var R = root.PIVSim.Render, Color = root.PIVSim.Color, I18N = root.PIVSim.I18N;
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  var S = {
+    themeMode: 'auto', theme: 'light',
+    size: 384, field: 'cylinder', disp: 6,
+    seed: 14, dp: 2.6, noise: 1.5, loss: 5,
+    win: 32, overlap: 0.5, passes: 3, subpix: 'gauss', thresh: 2,
+    bg: 'a', arrow: 1, step: 0,
+    ov: { vectors: true, truth: false, error: false, grid: false },
+    corrMode: '3d',
+    rngSeed: 7,
+    flow: null, img: null, res: null, truth: null, der: null,
+    uploaded: null, pendingA: null, pendingB: null,
+    picked: -1, insp: null,
+    busy: false
+  };
+
+  var stage = $('stage'), ctx = stage.getContext('2d');
+  var bgCanvas = R.offscreen(8, 8), fgCanvas = R.offscreen(8, 8);
+  var bgKey = '', reveal = { n: 0, target: 0, raf: 0, t0: 0 };
+  var blink = { raf: 0, on: false, phase: 0 };
+
+  /* ---------- storage (per-viewer convenience only) --------------------- */
+  function store(k, v) {
+    try { if (v === undefined) return localStorage.getItem('piv.' + k); localStorage.setItem('piv.' + k, v); }
+    catch (e) { return null; }
+  }
+
+  /* ---------- theme ------------------------------------------------------ */
+  function resolveTheme() {
+    if (S.themeMode === 'auto') {
+      var m = root.matchMedia && root.matchMedia('(prefers-color-scheme: dark)');
+      S.theme = m && m.matches ? 'dark' : 'light';
+      document.documentElement.removeAttribute('data-theme');
+    } else {
+      S.theme = S.themeMode;
+      document.documentElement.setAttribute('data-theme', S.theme);
+    }
+  }
+
+  function cssVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  /* ---------- controls --------------------------------------------------- */
+  function buildFlowSelect() {
+    var sel = $('flowKind'), groups = {}, order = [];
+    sel.innerHTML = '';
+    Flow.fields.forEach(function (f) {
+      if (!groups[f.group]) { groups[f.group] = []; order.push(f.group); }
+      groups[f.group].push(f);
+    });
+    order.forEach(function (g) {
+      var og = document.createElement('optgroup');
+      og.label = I18N.t('grp.' + g);
+      groups[g].forEach(function (f) {
+        var o = document.createElement('option');
+        o.value = f.id;
+        o.textContent = I18N.t('f.' + f.id);
+        og.appendChild(o);
+      });
+      sel.appendChild(og);
+    });
+    sel.value = S.field;
+  }
+
+  function fmt(v, n) { return v.toFixed(n === undefined ? 2 : n); }
+
+  function syncLabels() {
+    $('dispVal').textContent = fmt(S.disp, 1) + ' px';
+    $('seedVal').textContent = S.seed + (I18N.lang === 'ko' ? ' 개' : '');
+    $('dpVal').textContent = fmt(S.dp, 1) + ' px';
+    $('noiseVal').textContent = fmt(S.noise, 1) + ' %';
+    $('lossVal').textContent = S.loss + ' %';
+    $('scaleVal').textContent = '× ' + fmt(S.arrow, 1);
+  }
+
+  function readControls() {
+    S.field = $('flowKind').value || S.field;
+    S.disp = +$('dispRange').value;
+    S.seed = +$('seedRange').value;
+    S.dp = +$('dpRange').value;
+    S.noise = +$('noiseRange').value;
+    S.loss = +$('lossRange').value;
+    S.size = +$('sizeSelect').value;
+    S.win = +$('winSelect').value;
+    S.overlap = +$('overlapSelect').value;
+    S.passes = +$('passesSelect').value;
+    S.subpix = $('subpixSelect').value;
+    S.thresh = +$('threshSelect').value;
+    S.bg = $('bgSelect').value;
+    S.arrow = +$('scaleRange').value;
+    S.ov.vectors = $('ovVectors').checked;
+    S.ov.truth = $('ovTruth').checked;
+    S.ov.error = $('ovError').checked;
+    S.ov.grid = $('ovGrid').checked;
+    syncLabels();
+  }
+
+  /* ---------- pipeline --------------------------------------------------- */
+
+  function shoot() {
+    if (S.uploaded) {
+      S.flow = null;
+      S.img = { a: S.uploaded.a, b: S.uploaded.b, width: S.uploaded.w, height: S.uploaded.h };
+      return;
+    }
+    S.flow = Flow.bind(S.field, S.size, S.size, S.disp);
+    S.img = Synth.generate({
+      width: S.size, height: S.size, flow: S.flow, maxDisp: S.disp,
+      nPerWindow: S.seed, dp: S.dp, noise: S.noise, loss: S.loss / 100,
+      seed: S.rngSeed
+    });
+  }
+
+  /* A window that straddles a body wall only holds particles on one side, so
+   * its correlation is meaningless. Real PIV masks those out too: reject a
+   * window when a fifth of it falls inside the body. */
+  function maskedWindow(win) {
+    if (!S.flow || !S.flow.def.mask) return null;
+    var m = S.flow.masked, n = 5, h = win / 2;
+    return function (cx, cy) {
+      if (m(cx, cy)) return true;
+      var hit = 0;
+      for (var j = 0; j < n; j++) {
+        for (var i = 0; i < n; i++) {
+          if (m(cx - h + (i + 0.5) * win / n, cy - h + (j + 0.5) * win / n)) hit++;
+        }
+      }
+      return hit >= n * n * 0.2;
+    };
+  }
+
+  function compute(animate) {
+    var cfg = {
+      imgA: S.img.a, imgB: S.img.b, width: S.img.width, height: S.img.height,
+      win: S.win, overlap: S.overlap, passes: S.passes, subpix: S.subpix,
+      subpixel: S.subpix, threshold: S.thresh, snrMin: 1.2,
+      masked: maskedWindow(S.win)
+    };
+    S.cfg = cfg;
+    S.res = PIV.run(cfg);
+    S.der = PIV.derive(S.res);
+    S.truth = S.flow ? PIV.truth(S.res, S.flow) : null;
+    bgKey = '';
+    if (S.picked >= S.res.nx * S.res.ny) S.picked = -1;
+    updateMetrics();
+    if (animate) startReveal(); else { reveal.n = S.res.nx * S.res.ny; draw(); }
+    if (S.picked < 0) autoPick();
+    else inspect(S.picked);
+  }
+
+  function run(animate) {
+    if (S.busy) return;
+    S.busy = true;
+    var btn = $('runBtn');
+    btn.disabled = true;
+    btn.textContent = I18N.t('run.busy');
+    veil(I18N.t('run.busy'));
+    /* let the veil paint before the synchronous correlation pass */
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        try {
+          readControls();
+          shoot();
+          compute(animate !== false);
+        } finally {
+          S.busy = false;
+          btn.disabled = false;
+          btn.textContent = I18N.t('run.again');
+          veil(null);
+        }
+      });
+    });
+  }
+
+  function veil(text) {
+    var v = $('veil');
+    if (text) { v.firstElementChild ? (v.firstElementChild.textContent = text) : (v.textContent = text); v.hidden = false; }
+    else v.hidden = true;
+  }
+
+  /* ---------- reveal animation ------------------------------------------ */
+  function startReveal() {
+    var n = S.res.nx * S.res.ny;
+    reveal.target = n; reveal.n = 0; reveal.t0 = 0;
+    cancelAnimationFrame(reveal.raf);
+    var reduce = root.matchMedia && root.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) { reveal.n = n; draw(); $('progress').style.width = '0'; return; }
+    var dur = 850;
+    function frame(t) {
+      if (!reveal.t0) reveal.t0 = t;
+      var p = Math.min(1, (t - reveal.t0) / dur);
+      var e = 1 - Math.pow(1 - p, 3);
+      reveal.n = Math.round(e * n);
+      $('progress').style.width = (p < 1 ? (100 * p).toFixed(1) : 0) + '%';
+      draw();
+      if (p < 1) reveal.raf = requestAnimationFrame(frame);
+    }
+    reveal.raf = requestAnimationFrame(frame);
+  }
+
+  /* ---------- drawing ---------------------------------------------------- */
+
+  function fitCanvas() {
+    if (!S.img) return;
+    var W = S.img.width, H = S.img.height;
+    var cssW = $('sensor').clientWidth || 600;
+    var dpr = Math.min(2, root.devicePixelRatio || 1);
+    var bw = Math.max(320, Math.round(cssW * dpr));
+    if (stage.width !== bw || stage.height !== Math.round(bw * H / W)) {
+      stage.width = bw;
+      stage.height = Math.round(bw * H / W);
+    }
+  }
+
+  function bgSpec() {
+    var m = S.bg;
+    if (m === 'speed') return { arr: S.der.mag, ramp: 'speed', sym: false, label: 'legend.speed' };
+    if (m === 'vort') return { arr: S.der.vort, ramp: 'vorticity', sym: true, label: 'legend.vort' };
+    if (m === 'div') return { arr: S.der.div, ramp: 'vorticity', sym: true, label: 'legend.div' };
+    if (m === 'err' && S.truth) return { arr: S.truth.err, ramp: 'error', sym: false, label: 'legend.err' };
+    return null;
+  }
+
+  function buildBackground() {
+    var W = S.img.width, H = S.img.height;
+    var spec = bgSpec();
+    var key = [S.bg, S.theme, W, H, S.res ? S.res.ms : 0, blink.phase].join('|');
+    if (key === bgKey) return;
+    bgKey = key;
+    if (bgCanvas.width !== W || bgCanvas.height !== H) {
+      bgCanvas.width = W; bgCanvas.height = H;
+    }
+    var bctx = bgCanvas.getContext('2d');
+    bctx.clearRect(0, 0, W, H);
+    if (spec) {
+      var range = Color.niceRange(spec.arr, S.res.status, spec.sym);
+      S.range = range;
+      var mask = (S.flow && S.flow.def.mask) ? S.flow.masked : null;
+      bctx.putImageData(
+        R.fieldImage(bctx, S.res, spec.arr, range, spec.ramp, S.theme, W, H, mask), 0, 0);
+    } else if (S.bg === 'pair') {
+      bctx.putImageData(R.pairImage(bctx, S.img.a, S.img.b, W, H), 0, 0);
+    } else {
+      var src = (S.bg === 'blink' && blink.phase) ? S.img.b : S.img.a;
+      bctx.putImageData(R.particleImage(bctx, src, W, H), 0, 0);
+    }
+    updateRamp(spec);
+  }
+
+  var ARROW_RAMP_LO = 0.34;   /* the darkest end of the ramp vanishes on the image */
+
+  function updateRamp(spec) {
+    var bar = $('rampBar'), ramp, range, label, lo = 0;
+    if (spec) {
+      ramp = spec.ramp; range = S.range; label = I18N.t(spec.label);
+      if (spec.sym && S.bg === 'vort') {
+        label += '  ' + I18N.t('legend.cw') + ' → ' + I18N.t('legend.ccw');
+      }
+    } else if (S.ov.vectors && S.res) {
+      /* arrows over the raw frames are coloured by speed — show that scale */
+      ramp = 'speed'; range = speedRange(); label = I18N.t('legend.speed');
+      lo = ARROW_RAMP_LO;
+    } else { bar.hidden = true; return; }
+    bar.hidden = false;
+    bar.className = spec ? 'bar' : 'bar on-sensor';
+    $('ramp').style.background = Color.gradient(ramp, spec ? S.theme : 'dark', 90, lo, 1);
+    var dec = Math.abs(range[1]) < 0.1 ? 3 : (Math.abs(range[1]) < 2 ? 2 : 1);
+    $('rampLo').textContent = fmt(range[0], dec);
+    $('rampHi').textContent = fmt(range[1], dec);
+    $('rampLabel').textContent = label;
+  }
+
+  function draw() {
+    if (!S.img) return;
+    fitCanvas();
+    var W = S.img.width, H = S.img.height, k = stage.width / W;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, stage.width, stage.height);
+    buildBackground();
+    var onField = !!bgSpec();
+    if (onField) {
+      /* masked cells carry no data; let them read as empty panel, not as a hole */
+      ctx.fillStyle = cssVar('--sunken');
+      ctx.fillRect(0, 0, stage.width, stage.height);
+    }
+    ctx.imageSmoothingEnabled = onField;
+    ctx.drawImage(bgCanvas, 0, 0, stage.width, stage.height);
+    ctx.setTransform(k, 0, 0, k, 0, 0);
+    /* The particle frames stay dark whatever the page theme is, so marks drawn
+     * on them take dark-theme colours; marks on a scalar field follow the page. */
+    var markTheme = onField ? S.theme : 'dark';
+    var inkOnImage = '#5BE9AC';
+    var truthColor = onField ? cssVar('--signal') : '#FFA362';
+    var rejectColor = onField ? cssVar('--bad') : '#FF7D66';
+    var showTruth = S.ov.truth && S.truth;
+
+    if (S.flow) {
+      R.body(ctx, S.flow,
+        onField ? cssVar('--sunken') : 'rgba(110,135,130,.30)',
+        onField ? cssVar('--line-2') : 'rgba(190,225,215,.70)');
+    }
+    if (S.ov.grid && S.res) {
+      R.grid(ctx, S.res, onField ? 'rgba(20,30,30,.22)' : 'rgba(150,200,190,.28)', 0.8 / k * 1.2);
+    }
+    if (!S.res) return;
+
+    var s = arrowScale();
+    if (showTruth) {
+      /* a wide band under the measured arrow: where the two agree the band sits
+       * symmetrically around it, where they differ it sticks out */
+      R.truthVectors(ctx, S.res, S.truth, {
+        scale: s, color: truthColor, lineWidth: 3.6 / k, alpha: .95
+      });
+    }
+    if (S.ov.vectors) {
+      R.vectors(ctx, S.res, {
+        scale: s, limit: reveal.n, lineWidth: 1.15 / k,
+        ramp: onField ? null : 'speed', range: speedRange(), theme: markTheme,
+        rampLo: ARROW_RAMP_LO,
+        color: onField ? cssVar('--ink') : inkOnImage,
+        halo: showTruth ? null : (onField ? 'rgba(255,255,255,.55)' : 'rgba(0,0,0,.6)'),
+        showRejected: true, rejectedColor: rejectColor
+      });
+    }
+    if (S.ov.error && S.truth) {
+      R.errorVectors(ctx, S.res, S.truth, { scale: s * 10, color: truthColor, lineWidth: 1.3 / k });
+    }
+
+    /* the window being correlated right now, and the one under inspection */
+    if (reveal.n < reveal.target && reveal.n > 0) {
+      var kk = Math.min(reveal.n, reveal.target - 1);
+      var i = kk % S.res.nx, j = (kk - i) / S.res.nx;
+      R.windowMarker(ctx, S.res.xs[i], S.res.ys[j], S.res.win, inkOnImage, 1.6 / k);
+    }
+    if (S.picked >= 0) {
+      var pi = S.picked % S.res.nx, pj = (S.picked - pi) / S.res.nx;
+      R.windowMarker(ctx, S.res.xs[pi], S.res.ys[pj], S.res.win,
+        onField ? cssVar('--ink') : '#FFFFFF', 1.8 / k);
+    }
+  }
+
+  function speedRange() {
+    if (!S.der) return [0, 1];
+    if (!S.speedRange || S.speedKey !== S.res.ms) {
+      S.speedRange = Color.niceRange(S.der.mag, S.res.status, false);
+      S.speedKey = S.res.ms;
+    }
+    return S.speedRange;
+  }
+
+  /* Arrow length: 1.0 means the largest vector spans one window spacing. */
+  function arrowScale() {
+    var r = speedRange();
+    var ref = Math.max(0.3, r[1]);
+    return S.arrow * (S.res.step * 0.95) / ref;
+  }
+
+  /* ---------- inspector -------------------------------------------------- */
+
+  function autoPick() {
+    if (!S.res) return;
+    var best = -1, bv = -1;
+    for (var k = 0; k < S.res.nx * S.res.ny; k++) {
+      if (S.res.status[k] !== 0) continue;
+      var m = Math.hypot(S.res.u[k], S.res.v[k]);
+      if (m > bv) { bv = m; best = k; }
+    }
+    if (best >= 0) inspect(best);
+  }
+
+  function inspect(index) {
+    if (!S.res || index < 0 || index >= S.res.nx * S.res.ny) return;
+    S.picked = index;
+    S.insp = PIV.inspect(S.cfg, S.res, index);
+    $('inspPick').hidden = true;
+    $('inspContent').hidden = false;
+    drawInspector();
+    draw();
+  }
+
+  function drawInspector() {
+    var ins = S.insp;
+    if (!ins) return;
+    R.zoom($('winA'), ins.a, ins.win, true);
+    R.zoom($('winB'), ins.b, ins.win, true);
+    var half = Math.min(ins.limit, S.corrMode === '3d' ? 12 : 10);
+    var ink = cssVar('--laser'), sig = cssVar('--signal');
+    if (S.corrMode === '3d') R.corrSurface($('corr'), ins, half, S.theme, ink, sig);
+    else R.corrMap($('corr'), ins, half, S.theme, '#FFFFFF');
+
+    var k = S.picked;
+    $('rPos').textContent = Math.round(ins.cx) + ', ' + Math.round(ins.cy) + ' px';
+    $('rMeas').textContent = fmt(ins.u, 3) + ', ' + fmt(ins.v, 3) + ' px';
+    if (S.truth) {
+      $('rTruth').textContent = fmt(S.truth.tu[k], 3) + ', ' + fmt(S.truth.tv[k], 3) + ' px';
+      var ex = ins.u - S.truth.tu[k], ey = ins.v - S.truth.tv[k];
+      $('rErr').textContent = fmt(Math.hypot(ex, ey), 3) + ' px';
+    } else {
+      $('rTruth').textContent = '—';
+      $('rErr').textContent = '—';
+    }
+    $('rSub').textContent = fmt(ins.peak.sx, 3) + ', ' + fmt(ins.peak.sy, 3) + ' px';
+    $('rShift').textContent = ins.shiftX + ', ' + ins.shiftY + ' px';
+    $('rPeak').textContent = fmt(ins.peak.peak, 3);
+    $('rSnr').textContent = fmt(ins.peak.snr, 2);
+    var st = S.res.status[k];
+    var v = $('rStatus');
+    v.setAttribute('data-st', st);
+    v.textContent = I18N.t(st === 0 ? 'st.ok' : st === 1 ? 'st.outlier' : st === 2 ? 'st.masked' : 'st.weak');
+  }
+
+  function pickAt(clientX, clientY) {
+    if (!S.res) return;
+    var rect = stage.getBoundingClientRect();
+    var x = (clientX - rect.left) / rect.width * S.img.width;
+    var y = (clientY - rect.top) / rect.height * S.img.height;
+    var i = Math.round((x - S.res.xs[0]) / S.res.step);
+    var j = Math.round((y - S.res.ys[0]) / S.res.step);
+    i = Math.max(0, Math.min(S.res.nx - 1, i));
+    j = Math.max(0, Math.min(S.res.ny - 1, j));
+    inspect(j * S.res.nx + i);
+  }
+
+  /* ---------- metrics & diagnostics -------------------------------------- */
+
+  function updateMetrics() {
+    var res = S.res, n = res.nx * res.ny;
+    var valid = 0, masked = 0, rejected = 0, weak = 0, peakSum = 0, snrSum = 0, cnt = 0;
+    for (var k = 0; k < n; k++) {
+      var st = res.status[k];
+      if (st === 2) { masked++; continue; }
+      cnt++;
+      peakSum += res.corr[k];
+      snrSum += Math.min(20, res.snr[k]);
+      if (st === 0) valid++; else if (st === 1) rejected++; else weak++;
+    }
+    var meanPeak = cnt ? peakSum / cnt : 0, meanSnr = cnt ? snrSum / cnt : 0;
+    var validPct = cnt ? 100 * valid / cnt : 0;
+
+    var hero = $('rmsVal'), frac = $('rmsFraction');
+    var heroCap = document.querySelector('.hero .cap');
+    if (S.truth) {
+      heroCap.textContent = I18N.t('m.rms');
+      hero.innerHTML = fmt(S.truth.rms, 3) + '<small> ' + I18N.t('m.rms.px') + '</small>';
+      var inv = S.truth.rms > 0 ? Math.round(1 / S.truth.rms) : 0;
+      frac.innerHTML = I18N.t('m.subpx') + ' — ' + I18N.t('m.subpx.sub') + ' <b>1/' + inv + '</b>';
+      document.querySelector('.hero .sub').textContent = I18N.t('m.rms.sub');
+    } else {
+      heroCap.textContent = I18N.t('m.peak');
+      hero.innerHTML = fmt(meanPeak, 3);
+      frac.textContent = '';
+      document.querySelector('.hero .sub').textContent = I18N.t('upload.hint');
+    }
+
+    $('stVectors').textContent = res.nx + ' × ' + res.ny + ' = ' + (n - masked);
+    $('stValid').textContent = fmt(validPct, 1) + ' %';
+    $('stPeak').textContent = fmt(meanPeak, 3);
+    $('stBias').textContent = S.truth
+      ? fmt(S.truth.biasX, 3) + ', ' + fmt(S.truth.biasY, 3) + ' px' : '—';
+    $('stMax').textContent = S.truth ? fmt(S.truth.max, 2) + ' px' : '—';
+    $('stPasses').textContent = res.passes.map(function (p) { return p.win; }).join(' → ') + ' px';
+    $('stTime').textContent = Math.round(res.ms) + ' ms';
+
+    syncKeys();
+
+    /* --- health checks --- */
+    var rows = [];
+    var nI = S.uploaded ? null : S.seed * Math.pow(S.win / 32, 2);
+    if (nI !== null) {
+      rows.push(chk('diag.seed', nI >= 8 ? 'ok' : nI >= 4 ? 'warn' : 'bad',
+        fmt(nI, 1) + (I18N.lang === 'ko' ? ' 개' : ''),
+        nI >= 8 ? 'diag.seed.ok' : 'diag.seed.warn'));
+    }
+    var p98 = percentileSpeed(0.98);
+    var q = p98 / (S.win / 4);
+    rows.push(chk('diag.quarter', q <= 1 ? 'ok' : q <= 1.4 ? 'warn' : 'bad',
+      fmt(p98, 1) + ' / ' + fmt(S.win / 4, 1) + ' px',
+      q <= 1 ? 'diag.quarter.ok' : 'diag.quarter.warn'));
+    if (!S.uploaded) {
+      rows.push(chk('diag.dp', (S.dp >= 1.8 && S.dp <= 3.6) ? 'ok' : (S.dp >= 1.4 ? 'warn' : 'bad'),
+        fmt(S.dp, 1) + ' px', (S.dp >= 1.8 && S.dp <= 3.6) ? 'diag.dp.ok' : 'diag.dp.warn'));
+    }
+    rows.push(chk('diag.snr', meanSnr >= 1.5 ? 'ok' : meanSnr >= 1.2 ? 'warn' : 'bad',
+      fmt(meanSnr, 2), meanSnr >= 1.5 ? 'diag.snr.ok' : 'diag.snr.warn'));
+    rows.push(chk('diag.valid', validPct >= 95 ? 'ok' : validPct >= 85 ? 'warn' : 'bad',
+      fmt(validPct, 1) + ' %', validPct >= 95 ? 'diag.valid.ok' : 'diag.valid.warn'));
+    $('diags').innerHTML = rows.join('');
+  }
+
+  /* the legend names only what is on screen, in the colour it was drawn in */
+  function syncKeys() {
+    var onField = !!(S.res && bgSpec());
+    var rampColoured = S.ov.vectors && !onField;
+    $('keyMeas').hidden = !S.ov.vectors || rampColoured;
+    $('keyMeas').style.color = onField ? 'var(--ink)' : '#5BE9AC';
+    $('keyTruth').hidden = !(S.ov.truth && S.truth);
+    $('keyTruth').style.color = onField ? 'var(--signal)' : '#FFA362';
+    $('keyRej').style.color = onField ? 'var(--bad)' : '#FF7D66';
+  }
+
+  function chk(labelKey, level, value, noteKey) {
+    var mark = level === 'ok' ? '✓' : level === 'warn' ? '!' : '✕';
+    return '<div class="diag" data-level="' + level + '">' +
+      '<span class="mark">' + mark + '</span>' +
+      '<span class="what">' + I18N.t(labelKey) + '<em>' + I18N.t(noteKey) + '</em></span>' +
+      '<span class="num">' + value + '</span></div>';
+  }
+
+  function percentileSpeed(p) {
+    var v = [], k;
+    if (S.truth) {
+      for (k = 0; k < S.truth.tu.length; k++) {
+        if (S.res.status[k] === 2) continue;
+        v.push(Math.hypot(S.truth.tu[k], S.truth.tv[k]));
+      }
+    } else {
+      for (k = 0; k < S.der.mag.length; k++) {
+        if (S.res.status[k] === 2) continue;
+        v.push(S.der.mag[k]);
+      }
+    }
+    if (!v.length) return 0;
+    v.sort(function (a, b) { return a - b; });
+    return v[Math.min(v.length - 1, Math.floor(v.length * p))];
+  }
+
+  /* ---------- story steps ------------------------------------------------ */
+
+  function setStep(n) {
+    S.step = n;
+    var btns = document.querySelectorAll('.step');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].setAttribute('aria-current', String(+btns[i].getAttribute('data-step') === n));
+    }
+    if (n === 1) {
+      $('bgSelect').value = 'a';
+      $('ovVectors').checked = false; $('ovGrid').checked = false;
+      $('ovTruth').checked = false; $('ovError').checked = false;
+    } else if (n === 2) {
+      $('bgSelect').value = 'blink';
+      $('ovVectors').checked = false; $('ovGrid').checked = false;
+    } else if (n === 3) {
+      $('bgSelect').value = 'a';
+      $('ovVectors').checked = false; $('ovGrid').checked = true;
+    } else if (n === 4) {
+      $('bgSelect').value = 'speed';
+      $('ovVectors').checked = true; $('ovGrid').checked = false;
+    }
+    readControls();
+    updateBlink();
+    if (n === 3 && S.res) {
+      var mid = Math.floor(S.res.ny / 2) * S.res.nx + Math.floor(S.res.nx / 2);
+      inspect(S.picked >= 0 ? S.picked : mid);
+      var el = document.querySelector('.inspector');
+      if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+    if (n === 4 && S.res) startReveal();
+    draw();
+    $('stageHint').textContent = I18N.t(n === 2 ? 'stage.blink' : 'stage.hint');
+  }
+
+  /* ---------- blink ------------------------------------------------------ */
+  function updateBlink() {
+    var want = S.bg === 'blink';
+    if (want === blink.on) return;
+    blink.on = want;
+    cancelAnimationFrame(blink.raf);
+    if (!want) { blink.phase = 0; bgKey = ''; draw(); return; }
+    var last = 0;
+    function frame(t) {
+      if (!last) last = t;
+      if (t - last > 420) { last = t; blink.phase ^= 1; draw(); }
+      if (blink.on) blink.raf = requestAnimationFrame(frame);
+    }
+    blink.raf = requestAnimationFrame(frame);
+  }
+
+  /* ---------- upload ----------------------------------------------------- */
+
+  function loadFile(file, which) {
+    var img = new Image();
+    var url = URL.createObjectURL(file);
+    img.onload = function () {
+      var cap = 640;
+      var sc = Math.min(1, cap / Math.max(img.naturalWidth, img.naturalHeight));
+      var w = Math.max(64, Math.round(img.naturalWidth * sc));
+      var h = Math.max(64, Math.round(img.naturalHeight * sc));
+      var c = R.offscreen(w, h), cc = c.getContext('2d');
+      cc.drawImage(img, 0, 0, w, h);
+      var d = cc.getImageData(0, 0, w, h);
+      var rec = { g: Synth.fromImageData(d), w: w, h: h };
+      if (which === 'a') S.pendingA = rec; else S.pendingB = rec;
+      URL.revokeObjectURL(url);
+      tryUploaded();
+    };
+    img.onerror = function () { URL.revokeObjectURL(url); toast('copy.fail'); };
+    img.src = url;
+  }
+
+  function tryUploaded() {
+    if (!S.pendingA || !S.pendingB) return;
+    var A = S.pendingA, B = S.pendingB, note = '';
+    var w = A.w, h = A.h, b = B.g;
+    if (B.w !== w || B.h !== h) {
+      var out = new Float32Array(w * h);
+      for (var j = 0; j < h; j++) {
+        for (var i = 0; i < w; i++) {
+          out[j * w + i] = (i < B.w && j < B.h) ? B.g[j * B.w + i] : 0;
+        }
+      }
+      b = out;
+      note = 'upload.size';
+    }
+    S.uploaded = { a: A.g, b: b, w: w, h: h };
+    S.picked = -1;
+    if (note) toast(note);
+    run(true);
+  }
+
+  function toast(key, raw) {
+    var t = $('toast');
+    t.textContent = raw || I18N.t(key);
+    if (toast.timer) clearTimeout(toast.timer);
+    toast.timer = setTimeout(function () { t.textContent = ''; }, 4000);
+  }
+
+  function csv() {
+    var res = S.res, lines = ['x_px,y_px,dx_px,dy_px,peak_R,snr,status'];
+    for (var j = 0; j < res.ny; j++) {
+      for (var i = 0; i < res.nx; i++) {
+        var k = j * res.nx + i;
+        lines.push([
+          res.xs[i].toFixed(1), res.ys[j].toFixed(1),
+          res.u[k].toFixed(4), res.v[k].toFixed(4),
+          res.corr[k].toFixed(4), Math.min(99, res.snr[k]).toFixed(2),
+          res.status[k]
+        ].join(','));
+      }
+    }
+    return lines.join('\n');
+  }
+
+  /* ---------- wiring ----------------------------------------------------- */
+
+  function applyLang(next) {
+    I18N.apply(next);
+    buildFlowSelect();
+    syncLabels();
+    $('langBtn').textContent = I18N.t('app.langLabel');
+    $('runBtn').textContent = I18N.t(S.res ? 'run.again' : 'run');
+    $('stageHint').textContent = I18N.t(S.step === 2 ? 'stage.blink' : 'stage.hint');
+    if (S.res) { updateMetrics(); drawInspector(); bgKey = ''; draw(); }
+    store('lang', I18N.lang);
+  }
+
+  function bind() {
+    var reshootIds = ['flowKind', 'dispRange', 'seedRange', 'dpRange', 'noiseRange', 'lossRange', 'sizeSelect'];
+    var recomputeIds = ['winSelect', 'overlapSelect', 'passesSelect', 'subpixSelect', 'threshSelect'];
+    var redrawIds = ['bgSelect', 'scaleRange', 'ovVectors', 'ovTruth', 'ovError', 'ovGrid'];
+
+    reshootIds.forEach(function (id) {
+      $(id).addEventListener('input', function () {
+        readControls();
+        if (S.uploaded && id !== 'flowKind') return;
+        S.uploaded = null; S.pendingA = S.pendingB = null;
+        run(false);
+      });
+    });
+    recomputeIds.forEach(function (id) {
+      $(id).addEventListener('input', function () { readControls(); run(false); });
+    });
+    redrawIds.forEach(function (id) {
+      $(id).addEventListener('input', function () {
+        readControls();
+        updateBlink();
+        bgKey = '';
+        syncKeys();
+        draw();
+      });
+    });
+
+    $('runBtn').addEventListener('click', function () { run(true); });
+    $('reshootBtn').addEventListener('click', function () {
+      S.rngSeed = (Math.random() * 1e9) | 0;
+      S.uploaded = null; S.pendingA = S.pendingB = null;
+      $('fileA').value = ''; $('fileB').value = '';
+      run(true);
+    });
+
+    var steps = document.querySelectorAll('.step');
+    for (var i = 0; i < steps.length; i++) {
+      steps[i].addEventListener('click', function () {
+        setStep(+this.getAttribute('data-step'));
+      });
+    }
+
+    $('sensor').addEventListener('click', function (e) { pickAt(e.clientX, e.clientY); });
+    $('sensor').setAttribute('tabindex', '0');
+    $('sensor').addEventListener('keydown', function (e) {
+      if (!S.res) return;
+      var d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+      if (!d) return;
+      e.preventDefault();
+      var k = S.picked < 0 ? 0 : S.picked;
+      var i2 = k % S.res.nx, j2 = (k - i2) / S.res.nx;
+      i2 = Math.max(0, Math.min(S.res.nx - 1, i2 + d[0]));
+      j2 = Math.max(0, Math.min(S.res.ny - 1, j2 + d[1]));
+      inspect(j2 * S.res.nx + i2);
+    });
+
+    var modes = document.querySelectorAll('input[name="corrMode"]');
+    for (i = 0; i < modes.length; i++) {
+      modes[i].addEventListener('change', function () {
+        S.corrMode = this.value;
+        drawInspector();
+      });
+    }
+
+    $('langBtn').addEventListener('click', function () {
+      applyLang(I18N.lang === 'ko' ? 'en' : 'ko');
+    });
+    $('themeBtn').addEventListener('click', function () {
+      S.themeMode = S.themeMode === 'auto'
+        ? (S.theme === 'dark' ? 'light' : 'dark')
+        : (S.themeMode === 'dark' ? 'light' : 'dark');
+      resolveTheme();
+      store('theme', S.themeMode);
+      bgKey = '';
+      draw(); drawInspector();
+    });
+
+    $('fileA').addEventListener('change', function () {
+      if (this.files && this.files[0]) loadFile(this.files[0], 'a');
+    });
+    $('fileB').addEventListener('change', function () {
+      if (this.files && this.files[0]) loadFile(this.files[0], 'b');
+    });
+    $('clearUpload').addEventListener('click', function () {
+      S.uploaded = null; S.pendingA = S.pendingB = null;
+      $('fileA').value = ''; $('fileB').value = '';
+      $('dump').hidden = true;
+      run(true);
+    });
+    $('copyCsv').addEventListener('click', function () {
+      if (!S.res) return;
+      var text = csv();
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () { toast('copy.done'); },
+          function () { showDump(text); });
+      } else showDump(text);
+    });
+
+    var mq = root.matchMedia && root.matchMedia('(prefers-color-scheme: dark)');
+    if (mq && mq.addEventListener) {
+      mq.addEventListener('change', function () {
+        if (S.themeMode === 'auto') { resolveTheme(); bgKey = ''; draw(); drawInspector(); }
+      });
+    }
+
+    var rt;
+    root.addEventListener('resize', function () {
+      clearTimeout(rt);
+      rt = setTimeout(function () { bgKey = ''; draw(); }, 120);
+    });
+  }
+
+  function showDump(text) {
+    var d = $('dump');
+    d.value = text;
+    d.hidden = false;
+    d.select();
+    toast('copy.fail');
+  }
+
+  /* ---------- boot ------------------------------------------------------- */
+
+  function init() {
+    var savedTheme = store('theme');
+    if (savedTheme === 'light' || savedTheme === 'dark') S.themeMode = savedTheme;
+    resolveTheme();
+    var savedLang = store('lang');
+    applyLang(savedLang === 'en' ? 'en' : 'ko');
+    bind();
+    readControls();
+    shoot();
+    compute(true);
+    veil(null);
+    setStep(0);
+    $('runBtn').textContent = I18N.t('run.again');
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else init();
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+</script>

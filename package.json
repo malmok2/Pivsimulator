@@ -1,0 +1,12 @@
+{
+  "name": "piv-simulator",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Browser PIV simulator: synthetic particle images, FFT cross-correlation, graded against the exact answer",
+  "scripts": {
+    "test": "node tests/engine.test.js",
+    "build": "node tools/build.js",
+    "serve": "npx --yes http-server -p 8080 ."
+  },
+  "license": "MIT"
+}
