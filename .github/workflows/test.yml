@@ -1,0 +1,18 @@
+# PR·푸시마다 GitHub 서버에서 tests/run-tests.mjs를 자동 실행한다.
+# 실패하면 PR 화면에 빨간 X가 표시되어 병합 전에 알 수 있다.
+name: html-tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: npx playwright install --with-deps chromium
+      - run: npm test

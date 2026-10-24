@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>예시: __core / __selfTest 규약</title>
+<!--
+  이 파일은 "계산 로직 분리 + 자체 검증" 규약의 최소 예시다. 새 도구를 만들 때 이 구조를 따른다.
+  좌표계: 원점 중심, x 오른쪽(+), y 위쪽(+). 단위: mm.
+  예시 계산: 변 길이 a인 정육각형을 n겹 링으로 채울 때 셀 개수 = 1 + 3n(n+1).
+-->
+<style>
+  body { font-family: sans-serif; margin: 16px; }
+  label { display: block; margin: 4px 0; }
+  table { border-collapse: collapse; } td, th { border: 1px solid #999; padding: 2px 8px; }
+</style>
+</head>
+<body>
+<h3>육각 링 셀 개수 (예시)</h3>
+<label>링 수 n <input id="n" type="number" value="3" min="0"></label>
+<label>변 길이 a [mm] <input id="a" type="number" value="10" step="0.1"></label>
+<table><tr><th>셀 개수</th><td id="count"></td></tr><tr><th>셀 하나 면적 [mm²]</th><td id="area"></td></tr></table>
+
+<script>
+// ---------- 1. 계산 로직: 순수 함수만. DOM을 만지지 않는다. ----------
+const core = {
+  cellCount(n) { return 1 + 3 * n * (n + 1); },
+  hexArea(a) { return (3 * Math.sqrt(3) / 2) * a * a; },
+};
+window.__core = core;
+
+// ---------- 2. 화면: 입력을 읽어 core를 호출하고 결과를 표시한다. ----------
+function render() {
+  const n = Number(document.getElementById("n").value);
+  const a = Number(document.getElementById("a").value);
+  document.getElementById("count").textContent = core.cellCount(n);
+  document.getElementById("area").textContent = core.hexArea(a).toFixed(3);
+}
+document.querySelectorAll("input").forEach((el) => el.addEventListener("input", render));
+render();
+
+// ---------- 3. 자체 검증: tests/run-tests.mjs가 호출한다. ----------
+window.__selfTest = function () {
+  const failures = [];
+  const near = (x, y, tol = 1e-9) => Math.abs(x - y) <= tol;
+  if (core.cellCount(0) !== 1) failures.push("cellCount(0) should be 1");
+  if (core.cellCount(2) !== 19) failures.push("cellCount(2) should be 19");
+  if (!near(core.hexArea(1), 2.598076211353316)) failures.push("hexArea(1) wrong");
+  // 보존량 예: 링 n→n+1 증가분은 6(n+1)
+  for (let n = 0; n < 5; n++) if (core.cellCount(n + 1) - core.cellCount(n) !== 6 * (n + 1)) failures.push(`ring ${n} increment wrong`);
+  return { pass: failures.length === 0, failures };
+};
+</script>
+</body>
+</html>

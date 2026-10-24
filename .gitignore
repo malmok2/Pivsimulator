@@ -1,3 +1,8 @@
 node_modules/
 .DS_Store
 *.log
+
+# added by claude-setup
+package-lock.json
+test-results/
+Thumbs.db
