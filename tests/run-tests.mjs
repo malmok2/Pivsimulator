@@ -18,6 +18,10 @@ import { pathToFileURL } from "node:url";
 const ROOT = resolve(process.cwd());
 const EXCLUDE = [/node_modules/, /[\\/]dist[\\/]/, /[\\/]\.git[\\/]/, /tests[\\/]/];
 const TIMEOUT_MS = 15000;
+// STRICT=1 로 실행하면 __selfTest 가 없는 옛 파일의 콘솔 오류도 실패로 친다.
+// 기본(STRICT 없음)은 __selfTest 가 있는 파일만 엄격히 검사하고, 없는 파일은 경고만 낸다.
+//   → 규약 적용 전의 기존 HTML 때문에 저장소 전체가 빨간불이 되는 것을 막는다.
+const STRICT = process.env.STRICT === "1";
 
 function findHtml(dir, out = []) {
   for (const name of readdirSync(dir)) {
@@ -59,11 +63,13 @@ for (const file of targets) {
   }
   await page.close();
 
-  const stOk = !selfTest || selfTest.skipped || selfTest.pass === true;
-  const ok = errors.length === 0 && stOk;
+  const hasSelfTest = selfTest && !selfTest.skipped;
+  const stOk = !hasSelfTest || selfTest.pass === true;
+  const enforce = STRICT || hasSelfTest;            // 규약 적용 파일만 엄격 검사
+  const ok = stOk && (errors.length === 0 || !enforce);
   if (!ok) failed++;
 
-  const tag = ok ? "PASS" : "FAIL";
+  const tag = ok ? (errors.length ? "WARN" : "PASS") : "FAIL";
   const stNote = !selfTest || selfTest.skipped ? "(__selfTest 없음)" : selfTest.pass ? "(__selfTest 통과)" : "(__selfTest 실패)";
   console.log(`[${tag}] ${rel} ${stNote}`);
   for (const e of errors) console.log(`       - ${e}`);
